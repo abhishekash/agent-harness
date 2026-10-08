@@ -1,5 +1,7 @@
 # agent-harness
 
+[![CI](https://github.com/abhishekash/agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/abhishekash/agent-harness/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A hackable agent runtime for people who want to *see* what their agent is doing.
 
 Most agent frameworks optimize for demos: magic in, magic out. This one optimizes for the two things production agents actually need:
