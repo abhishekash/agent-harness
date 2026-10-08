@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-harness"
+version = "0.1.0"
+description = "A hackable agent runtime: tool-use loop, human-in-the-loop approval gates, OpenTelemetry tracing, MCP client, and skills loading."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Abhishek Ash", email = "ash.abhishek@gmail.com" }]
+keywords = ["ai-agents", "llm", "agent-harness", "human-in-the-loop", "mcp", "opentelemetry", "observability"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "opentelemetry-sdk>=1.25",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+dev = ["pytest>=8", "pytest-cov>=5"]
+
+[project.scripts]
+harness = "agent_harness.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/abhishekash/agent-harness"
+Repository = "https://github.com/abhishekash/agent-harness"
+Issues = "https://github.com/abhishekash/agent-harness/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_harness"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
