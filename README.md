@@ -37,7 +37,7 @@ agent.run       4.0ms
 total: 4.0ms across 15 spans
 ```
 
-Full artifacts in [`examples/`](examples/demo_trace.jsonl): raw JSONL spans, run-store record, rendered timeline.
+Full artifacts in [`examples/`](examples/demo_trace.jsonl): raw JSONL spans, run-store record, rendered timeline, and an [asciinema recording](examples/demo.cast) of the real CLI run.
 
 ## Why these choices
 
@@ -129,6 +129,10 @@ The agent's system prompt gets the *index* (name + description) only; bodies loa
 ## Testing philosophy
 
 48 tests, zero network. The loop, HITL matrix, sandbox escapes, MCP protocol, and trace rendering are all tested against the `ScriptedProvider` and a hand-rolled NDJSON MCP fixture server (`tests/fixtures/echo_mcp_server.py`). If a test needs the network, the design is wrong.
+
+## Design postmortem
+
+Read the [architecture postmortem](docs/architecture-postmortem.md) for the decisions behind the shared trace contract, HITL model, MCP boundary, deterministic evals, and known limits.
 
 ## Honest limitations
 
