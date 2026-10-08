@@ -146,7 +146,7 @@ The current run is 8/8 passing. A live-model runner should report model/version,
 
 ## Next experiments
 
-1. Configure PyPI trusted publishing and publish `mcp-trace` 0.1.0.
+1. Configure PyPI trusted publishing and publish the `abhishekash-mcp-trace` distribution as 0.1.0.
 2. Publish the validated `server.json` through `mcp-publisher`.
 3. Add an OTLP exporter and compare local JSONL with a real collector.
 4. Add context-budget middleware and an eval that catches context growth.
