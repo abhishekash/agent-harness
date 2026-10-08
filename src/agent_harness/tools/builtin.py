@@ -35,6 +35,13 @@ class _Rooted:
             raise PermissionError(f"path escapes workspace root: {path!r}")
         return p
 
+    def _resolve_or_error(self, path: str) -> Path | str:
+        """Resolve, returning an agent-readable error string instead of raising."""
+        try:
+            return self._resolve(path)
+        except PermissionError as e:
+            return f"error: {e}"
+
 
 class ReadFile(_Rooted):
     name = "read_file"
@@ -47,7 +54,9 @@ class ReadFile(_Rooted):
     }
 
     def run(self, path: str, **_: Any) -> str:
-        p = self._resolve(path)
+        p = self._resolve_or_error(path)
+        if isinstance(p, str):
+            return p
         if not p.is_file():
             return f"error: no such file: {path}"
         try:
@@ -66,7 +75,9 @@ class ListDir(_Rooted):
     }
 
     def run(self, path: str = ".", **_: Any) -> str:
-        base = self._resolve(path)
+        base = self._resolve_or_error(path)
+        if isinstance(base, str):
+            return base
         if not base.is_dir():
             return f"error: no such directory: {path}"
         entries: list[str] = []
@@ -95,7 +106,9 @@ class WriteFile(_Rooted):
     }
 
     def run(self, path: str, content: str, **_: Any) -> str:
-        p = self._resolve(path)
+        p = self._resolve_or_error(path)
+        if isinstance(p, str):
+            return p
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         return f"wrote {len(content)} chars to {p.relative_to(self.root)}"
@@ -103,6 +116,10 @@ class WriteFile(_Rooted):
 
 class RunShell(_Rooted):
     """Run an allowlisted command in the workspace with a hard timeout."""
+
+    ALLOWLIST = frozenset(
+        {"ls", "cat", "echo", "grep", "find", "head", "tail", "wc", "sort", "uniq", "pwd", "tree", "diff"}
+    )
 
     name = "run_shell"
     description = (
@@ -115,10 +132,6 @@ class RunShell(_Rooted):
         "properties": {"command": {"type": "string", "description": "Command line, e.g. 'grep -rn TODO src'"}},
         "required": ["command"],
     }
-
-    ALLOWLIST = frozenset(
-        {"ls", "cat", "echo", "grep", "find", "head", "tail", "wc", "sort", "uniq", "pwd", "tree", "diff"}
-    )
 
     def run(self, command: str, **_: Any) -> str:
         try:
