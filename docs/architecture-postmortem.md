@@ -133,7 +133,7 @@ The current run is 8/8 passing. A live-model runner should report model/version,
 1. **The trace contract became the integration surface.** Once spans had stable names and attributes, the MCP server and eval runner were straightforward. Without that contract, each project would invent its own logging.
 2. **Human edit is more valuable than human approval.** Approval prevents an unsafe call; edit lets a human redirect a basically-correct call without spending another model turn.
 3. **Deterministic providers expose runtime bugs quickly.** They make it possible to assert the exact number of tool calls, the exact side effect, and the exact approval event before introducing model nondeterminism.
-4. **Install truth matters.** A README must not say `uvx mcp-trace` until the package is actually on PyPI. The repository now builds clean distributions, includes the PyPI ownership marker and registry manifest, and uses a trusted-publishing workflow that will be enabled after PyPI ownership is configured.
+4. **Install truth matters.** A README must not say `uvx mcp-trace` until the package is actually on PyPI. The repository now publishes the unique `abhishekash-mcp-trace` distribution, exposes the `mcp-trace` command, and is active in the official MCP Registry.
 
 ## Known limits
 
@@ -146,9 +146,9 @@ The current run is 8/8 passing. A live-model runner should report model/version,
 
 ## Next experiments
 
-1. Configure PyPI trusted publishing and publish the `abhishekash-mcp-trace` distribution as 0.1.0.
-2. Publish the validated `server.json` through `mcp-publisher`.
-3. Add an OTLP exporter and compare local JSONL with a real collector.
+1. Publish `0.1.1` after the next meaningful runtime change, keeping the Registry version aligned.
+2. Add an OTLP exporter and compare local JSONL with a real collector.
+3. Add context-budget middleware and an eval that catches context growth.
 4. Add context-budget middleware and an eval that catches context growth.
 5. Add a live-provider runner with repeated trials and cost/latency reporting.
 6. Contribute a focused fix or documentation improvement to a core MCP/pi/skills repository.

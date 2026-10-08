@@ -98,14 +98,14 @@ Providers: `scripted` (deterministic, offline), `anthropic` (optional extra). Ad
 ## MCP: mount a server as tools
 
 ```bash
-harness run "Why was run 3f2a slow?" --mcp "uvx --from git+https://github.com/abhishekash/mcp-trace.git mcp-trace --trace-dir ./traces" --approve cli
+harness run "Why was run 3f2a slow?" --mcp "uvx abhishekash-mcp-trace --trace-dir ./traces" --approve cli
 ```
 
 Remote tools are namespaced (`mcp-trace__slowest_spans`) and default to `Risk.EXECUTE` — i.e. **gated until you say otherwise**:
 
 ```python
 client, tools = mount_server(
-    ["uvx", "--from", "git+https://github.com/abhishekash/mcp-trace.git", "mcp-trace"],
+    ["uvx", "abhishekash-mcp-trace"],
     risk_overrides={"list_runs": Risk.READ},
 )
 ```
