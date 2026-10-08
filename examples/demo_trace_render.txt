@@ -1,0 +1,21 @@
+trace f920798dd2558fcb84f9977736432a8b
+======================================
+agent.run       4.0ms  [scripted · ?→? tok]
+  agent.step       0.5ms
+    llm.complete       0.0ms  [scripted · 92→9 tok]
+    tool.call       0.2ms  [list_dir · risk=read]
+  agent.step       0.3ms
+    llm.complete       0.0ms  [scripted · 94→9 tok]
+    tool.call       0.1ms  [read_file · risk=read]
+  agent.step       0.3ms
+    llm.complete       0.0ms  [scripted · 125→9 tok]
+    tool.call       0.2ms  [write_file · risk=write]
+      🔐 human: approve by auto — auto-approved (unattended run)
+  agent.step       2.5ms
+    llm.complete       0.0ms  [scripted · 132→9 tok]
+    tool.call       2.3ms  [run_shell · risk=execute]
+      🔐 human: approve by auto — auto-approved (unattended run)
+  agent.step       0.1ms
+    llm.complete       0.0ms  [scripted · 196→14 tok]
+
+total: 4.0ms across 15 spans
