@@ -68,7 +68,9 @@ def render_trace(spans: list[dict[str, Any]]) -> str:
         attrs = span["attributes"]
         if "llm.model" in attrs:
             tok_in, tok_out = attrs.get("llm.usage.input_tokens", "?"), attrs.get("llm.usage.output_tokens", "?")
-            extra = f"  [{attrs['llm.model']} · {tok_in}→{tok_out} tok]"
+            kind = attrs.get("llm.kind")
+            label = f" · {kind}" if kind else ""
+            extra = f"  [{attrs['llm.model']}{label} · {tok_in}→{tok_out} tok]"
         if "tool.name" in attrs:
             extra = f"  [{attrs['tool.name']} · risk={attrs.get('tool.risk', '?')}]"
         lines.append(f"{indent}{span['name']}  {dur:8.1f}ms{status}{extra}")

@@ -97,13 +97,23 @@ Tool descriptions say **when to use** a tool, not merely what it returns. Result
 
 The harness includes a small, auditable stdio MCP client. Remote tools default to `execute` risk until explicitly overridden. That is conservative by design.
 
-### 6. Skills use progressive disclosure
+### 6. The live UI is a lens, not a second agent
+
+Interactive runs use a dependency-free terminal surface with a deliberately
+small visual vocabulary: model identity, a seven-item activity trail, and a
+summary pane with at most two content lines. After each meaningful tool action,
+the configured provider rewrites the summary through a separate no-tools
+completion. It is the same model, is included in the trace and cost totals,
+and never gets inserted into the agent's working conversation. This keeps the
+surface useful without pretending that a display summary is context compaction.
+
+### 7. Skills use progressive disclosure
 
 The harness loads the name and description of each `SKILL.md` into the system context, but does not inject every skill body. The `agent-skills` repository treats descriptions as routing prompts and requires failure notes in every skill.
 
 The format is intentionally plain Markdown so it can be consumed by different harnesses. Compatibility claims should be backed by tests as more harnesses are added.
 
-### 7. Evals measure mechanisms before model quality
+### 8. Evals measure mechanisms before model quality
 
 The first eval baseline uses a scripted provider. It does **not** claim that a model is intelligent. It verifies that the runtime mechanisms work:
 
@@ -122,7 +132,7 @@ The current run is 8/8 passing. A live-model runner should report model/version,
 
 | Artifact | Evidence |
 |---|---|
-| Harness | 48 offline tests; real demo trace with 15 spans and two approval events |
+| Harness | 59 offline tests; real demo trace with 15 spans and two approval events |
 | MCP server | 19 tests; the harness MCP client successfully mounted all seven query tools |
 | Skills | Four skills validated by a dependency-free frontmatter/routing checker |
 | Evals | Eight deterministic tasks passing, including denial and edited-argument safety contracts |
@@ -138,7 +148,8 @@ The current run is 8/8 passing. A live-model runner should report model/version,
 ## Known limits
 
 - The loop is single-agent and single-threaded.
-- Context grows without summarization or compaction.
+- Context compaction is approximate (character-based), not provider-native token accounting.
+- Checkpoints refuse in-flight side-effect replay; a human must resolve that boundary.
 - MCP support is stdio-only and does not handle server-initiated requests.
 - The CLI approver is synchronous; webhook/Slack approval is not implemented.
 - The eval suite is small and scripted; it is a mechanism baseline, not a model leaderboard.
@@ -146,9 +157,8 @@ The current run is 8/8 passing. A live-model runner should report model/version,
 
 ## Next experiments
 
-1. Publish `0.1.1` after the next meaningful runtime change, keeping the Registry version aligned.
+1. Publish the next release after the runtime change, keeping the Registry version aligned.
 2. Add an OTLP exporter and compare local JSONL with a real collector.
-3. Add context-budget middleware and an eval that catches context growth.
-4. Add context-budget middleware and an eval that catches context growth.
-5. Add a live-provider runner with repeated trials and cost/latency reporting.
-6. Contribute a focused fix or documentation improvement to a core MCP/pi/skills repository.
+3. Add provider-native token counting and streaming.
+4. Add a live-provider runner with repeated trials and cost/latency reporting.
+5. Contribute a focused fix or documentation improvement to a core MCP/pi/skills repository.

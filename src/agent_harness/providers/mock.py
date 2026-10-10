@@ -48,6 +48,29 @@ class ScriptedProvider:
             )
         return msg
 
+    def summarize(self, messages: Sequence[Message]) -> AssistantMessage:
+        """Deterministic stand-in that does not consume the scripted turns."""
+        prompt = messages[-1].content if messages else ""
+        previous = prompt.partition("Previous summary:\n")[2].partition("\n\nNew fact:")[0].strip()
+        fact = prompt.partition("New fact:\n")[2].partition("\n\nRewrite")[0].strip()
+        if not fact:
+            content = previous or "Progress is underway."
+        elif not previous or previous.lower().startswith("starting"):
+            content = fact
+        else:
+            # Keep the last two concrete facts in the offline demo. A real
+            # provider performs the semantic rewrite; this keeps the scripted
+            # provider useful without consuming an agent turn.
+            prior_lines = previous.splitlines()
+            content = "\n".join(([prior_lines[-1]] if prior_lines else []) + [fact])
+        return AssistantMessage(
+            content=content,
+            usage=Usage(
+                input_tokens=_estimate_tokens(prompt),
+                output_tokens=_estimate_tokens(content),
+            ),
+        )
+
 
 def scripted_run(*turns: ScriptItem) -> ScriptedProvider:
     """Convenience: ``scripted_run(say("hi"), call_tool(...), say("done"))``."""

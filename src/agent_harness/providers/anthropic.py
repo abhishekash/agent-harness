@@ -61,27 +61,43 @@ def _to_api_tools(tools: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 class AnthropicProvider:
-    def __init__(self, model: str = DEFAULT_MODEL, max_tokens: int = 4096, **client_kwargs):
+    def __init__(
+        self,
+        model: str = DEFAULT_MODEL,
+        max_tokens: int = 4096,
+        temperature: float | None = None,
+        **client_kwargs,
+    ):
         if Anthropic is None:  # pragma: no cover
             raise ProviderError(
                 "anthropic package not installed; run `pip install agent-harness[anthropic]`"
             )
         self.model = model
         self.max_tokens = max_tokens
+        self.temperature = temperature
         self._client = Anthropic(**client_kwargs)
 
-    def complete(self, messages: Sequence[Message], tools) -> AssistantMessage:
+    def _complete(
+        self,
+        messages: Sequence[Message],
+        tools,
+        *,
+        max_tokens: int | None = None,
+    ) -> AssistantMessage:
         system, rest = _split_system(messages)
         kwargs: dict[str, Any] = {}
         if tools:
             kwargs["tools"] = _to_api_tools(tools)
-        resp = self._client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            system=system,
-            messages=_to_api_messages(rest),
+        request: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": max_tokens or self.max_tokens,
+            "system": system,
+            "messages": _to_api_messages(rest),
             **kwargs,
-        )
+        }
+        if self.temperature is not None:
+            request["temperature"] = self.temperature
+        resp = self._client.messages.create(**request)
         text_parts: list[str] = []
         calls: list[ToolCall] = []
         for block in resp.content:
@@ -97,3 +113,10 @@ class AnthropicProvider:
                 output_tokens=resp.usage.output_tokens,
             ),
         )
+
+    def complete(self, messages: Sequence[Message], tools) -> AssistantMessage:
+        return self._complete(messages, tools)
+
+    def summarize(self, messages: Sequence[Message]) -> AssistantMessage:
+        """Rewrite a progress summary with this provider's configured model."""
+        return self._complete(messages, [], max_tokens=min(self.max_tokens, 160))

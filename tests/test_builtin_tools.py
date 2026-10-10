@@ -45,6 +45,13 @@ def test_shell_timeout_and_parsing(workspace):
     assert "error" in RunShell(workspace).run(command='echo "unterminated')
 
 
+def test_shell_blocks_paths_outside_workspace_and_find_exec(workspace):
+    outside = RunShell(workspace).run(command="cat ../outside.txt")
+    dangerous = RunShell(workspace).run(command="find . -exec cat {} \\;")
+    assert "escapes workspace root" in outside
+    assert "recursive find execution" in dangerous
+
+
 def test_default_tools_cover_risk_tiers(workspace):
     risks = {t.name: t.risk.value for t in default_tools(workspace)}
     assert risks == {

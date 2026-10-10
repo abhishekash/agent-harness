@@ -115,11 +115,12 @@ class WriteFile(_Rooted):
 
 
 class RunShell(_Rooted):
-    """Run an allowlisted command in the workspace with a hard timeout."""
+    """Run an allowlisted, non-shell command with workspace path checks."""
 
     ALLOWLIST = frozenset(
         {"ls", "cat", "echo", "grep", "find", "head", "tail", "wc", "sort", "uniq", "pwd", "tree", "diff"}
     )
+    BLOCKED_FIND_OPERATORS = frozenset({"-exec", "-execdir", "-delete", "-ok", "-okdir"})
 
     name = "run_shell"
     description = (
@@ -142,12 +143,29 @@ class RunShell(_Rooted):
             return "error: empty command"
         if argv[0] not in self.ALLOWLIST:
             return f"error: {argv[0]!r} is not allowlisted ({sorted(self.ALLOWLIST)})"
+        if any(token in self.BLOCKED_FIND_OPERATORS for token in argv):
+            return "error: recursive find execution/deletion is not allowed"
+        for token in argv[1:]:
+            if token.startswith("/") or token == ".." or token.startswith("../") or "/../" in token:
+                candidate = Path(token) if token.startswith("/") else self.root / token
+                try:
+                    candidate.resolve().relative_to(self.root)
+                except ValueError:
+                    return f"error: shell path escapes workspace root: {token!r}"
         try:
             proc = subprocess.run(
-                argv, cwd=self.root, capture_output=True, text=True, timeout=15
+                argv,
+                cwd=self.root,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
             )
         except subprocess.TimeoutExpired:
             return "error: command timed out after 15s"
+        except OSError as e:
+            return f"error: could not run command: {e}"
         out = (proc.stdout + proc.stderr).strip()
         suffix = f"\n[exit code {proc.returncode}]" if proc.returncode else ""
         return _truncate(out) + suffix if out else f"(no output){suffix}"

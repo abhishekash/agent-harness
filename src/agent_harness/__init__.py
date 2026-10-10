@@ -7,7 +7,24 @@ Pillars:
 - MCP client: mount any stdio MCP server as tools
 - skills: progressive-disclosure loading of SKILL.md directories
 """
-from agent_harness.types import AssistantMessage, Message, Risk, ToolCall, Usage
+from agent_harness.types import (
+    AssistantMessage,
+    CancellationToken,
+    Message,
+    Risk,
+    RunLimits,
+    ToolCall,
+    Usage,
+)
 
 __version__ = "0.1.0"
-__all__ = ["AssistantMessage", "Message", "Risk", "ToolCall", "Usage", "__version__"]
+__all__ = [
+    "AssistantMessage",
+    "CancellationToken",
+    "Message",
+    "Risk",
+    "RunLimits",
+    "ToolCall",
+    "Usage",
+    "__version__",
+]

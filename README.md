@@ -9,13 +9,19 @@ Most agent frameworks optimize for demos: magic in, magic out. This one optimize
 1. **Human-in-the-loop as a first-class mechanism** — every tool carries a `Risk` tier (`read` / `write` / `execute`); a policy decides which tiers need a human, and every human decision (approve / deny / *edit-the-arguments*) is recorded with its rationale.
 2. **Observability you can grep** — every run is an OpenTelemetry trace: one span per step, LLM call, and tool call, exported to plain JSONL. Human decisions are span *events*, so "why did the agent do that?" is always answerable after the fact.
 
-Plus the two extension points that matter in 2026: mount any **stdio MCP server** as tools (zero-SDK client included), and load **Agent Skills** (`SKILL.md`) with progressive disclosure.
+Plus the extension points that matter in 2026: mount any **stdio MCP server** as tools (zero-SDK client included), load **Agent Skills** (`SKILL.md`) with progressive disclosure, and run with explicit budgets, retries, context compaction, and crash-safe checkpoints.
 
 ```bash
-pip install -e ".[dev]"        # or: uv pip install -e ".[dev]"
+pip install -e ".[dev,opencode]" # add `,anthropic` for Anthropic
 harness run "Summarize notes.md into SUMMARY.md"   # scripted demo, no API key needed
+# OpenCode-compatible live run (keep the key in the environment)
+# OPENCODE_API_KEY=... harness run "inspect the workspace" --provider opencode --approve auto
 harness trace render traces/harness-*.jsonl
 ```
+
+The default `scripted` provider is a deterministic fixture, not an intelligent
+model. Use `--provider anthropic` or `--provider opencode` for a real
+model-driven run.
 
 ## Demo (real output, `--provider scripted --approve auto`)
 
@@ -39,6 +45,23 @@ total: 4.0ms across 15 spans
 
 Full artifacts in [`examples/`](examples/demo_trace.jsonl): raw JSONL spans, run-store record, rendered timeline, and an [asciinema recording](examples/demo.cast) of the real CLI run.
 
+## Minimal live run view
+
+Interactive runs open a quiet terminal surface instead of spraying every model
+turn into the shell. It keeps a short activity trail and a **two-line rolling
+summary** of what has actually happened. After each tool action, the harness
+asks the configured provider to rewrite that summary using the same model as
+the run; summary calls are traced and included in token/cost accounting. The
+summary is display state, not a replacement for the agent's full context.
+
+```bash
+harness run "inspect the service and fix the failing test"
+harness run "task" --ui never       # plain/batch mode; no summary calls
+```
+
+The UI is automatic only on a TTY. `--ui always` forces it for a terminal that
+is not detected as interactive.
+
 ## Why these choices
 
 | Decision | Rationale |
@@ -49,6 +72,33 @@ Full artifacts in [`examples/`](examples/demo_trace.jsonl): raw JSONL spans, run
 | JSONL span files as the **shared contract** | Traces are data: the MCP server, the evals repo, and the CLI renderer all read the same format |
 | **ScriptedProvider** for tests/demos | Deterministic agentic loops offline; no VCR cassettes, no flaky API mocks |
 | Zero-dep stdio **MCP client** (~200 LOC) | NDJSON + JSON-RPC is small enough to audit; you should be able to read your tool boundary |
+
+## Reliability controls
+
+Runs are bounded by default and can be made stricter for production:
+
+```bash
+harness run "task" \
+  --provider anthropic \
+  --approve cli \
+  --max-duration 300 \
+  --max-input-tokens 120000 \
+  --max-output-tokens 20000 \
+  --max-cost 2.50
+```
+
+The harness writes an atomic, user-only checkpoint alongside the trace. A
+completed run removes it; an interrupted or budget-limited run prints a resume
+command:
+
+```bash
+harness run --resume traces/harness-<timestamp>.jsonl.checkpoint.json \
+  --provider anthropic --root . --approve cli
+```
+
+A checkpoint containing an in-flight tool call is refused rather than replaying
+a possible side effect. Conversation context is compacted at an approximate
+character budget (`--context-chars`) using the configured model.
 
 ## Human-in-the-loop
 
@@ -93,7 +143,7 @@ Interactive gate (stderr):
                           runs.jsonl      (task, cost, approvals per run)
 ```
 
-Providers: `scripted` (deterministic, offline), `anthropic` (optional extra). Adding one = implement `complete(messages, tools) -> AssistantMessage`.
+Providers: `scripted` (deterministic, offline), `anthropic`, and OpenAI-compatible `opencode` (optional extras), plus a conservative retry wrapper for transient transport/rate-limit/server failures. Adding one = implement `complete(messages, tools) -> AssistantMessage`; optionally add `summarize(messages)` for same-model summaries and context handoffs.
 
 ## MCP: mount a server as tools
 
@@ -122,13 +172,13 @@ The agent's system prompt gets the *index* (name + description) only; bodies loa
 
 | Command | What it does |
 |---|---|
-| `harness run TASK [--approve cli\|auto\|deny] [--mcp CMD] [--skills DIR] [--trace FILE]` | Run the agent |
+| `harness run TASK [--provider scripted|anthropic|opencode] [--approve ...] [--mcp CMD] [--skills DIR] [--trace FILE] [--ui ...] [--max-*] [--checkpoint/--resume]` | Run a bounded, observable agent |
 | `harness trace render FILE [--trace-id ID]` | Timeline with tokens, cost, human decisions |
 | `harness runs list [--runs-db FILE]` | Local run store: steps, cost, outcome |
 
 ## Testing philosophy
 
-48 tests, zero network. The loop, HITL matrix, sandbox escapes, MCP protocol, and trace rendering are all tested against the `ScriptedProvider` and a hand-rolled NDJSON MCP fixture server (`tests/fixtures/echo_mcp_server.py`). If a test needs the network, the design is wrong.
+62 tests, zero network. The loop, HITL matrix, sandbox escapes, MCP protocol, retry behavior, context compaction, checkpoint/resume boundaries, trace rendering, tool-error observability, and two-line progress surface are all tested against deterministic providers and a hand-rolled NDJSON MCP fixture server (`tests/fixtures/echo_mcp_server.py`). Live-provider quality and the end-to-end shell-boundary debugging story are evaluated separately by [`agent-evals`](https://github.com/abhishekash/agent-evals).
 
 ## Design postmortem
 
@@ -137,16 +187,17 @@ Read the [architecture postmortem](docs/architecture-postmortem.md) for the deci
 ## Honest limitations
 
 - **Single-agent, single-threaded.** No sub-agent orchestration yet — the trace format is designed for it (parent spans), the loop isn't.
-- Context management is naive: long runs grow the message list unbounded. Truncation/summarization is roadmap, not present.
-- The Anthropic adapter is thin and *not* covered by the offline test-suite; the scripted provider is the reference implementation.
-- MCP client is stdio-only (no HTTP/SSE transport yet) and ignores server-initiated requests.
-- Shell tool allowlist is intentionally tiny; extend `RunShell.ALLOWLIST` knowingly.
+- Context compaction uses an approximate character budget rather than provider-native token counting; long-running production workloads should tune `--context-chars` and validate against their model.
+- The Anthropic adapter is thin and *not* covered by the offline test-suite; live retries, provider semantics, and model quality need networked evaluation.
+- MCP client is stdio-only (no HTTP/SSE transport yet), ignores server-initiated requests, and defaults remote tools to execute risk.
+- Shell execution is allowlisted and path-checked, but it is not an OS-level sandbox; extend `RunShell.ALLOWLIST` knowingly.
 
 ## Roadmap
 
 - [ ] Sub-agent spans (delegate task → child trace linked by parent)
-- [ ] Context window budgeting + summarization middleware
+- [ ] Provider-native token counting and streaming
 - [ ] Webhook approver (Slack/HTTP) for async human gates
+- [ ] OS/container sandbox for execute tools
 - [ ] MCP Streamable HTTP transport
 - [ ] OTel OTLP export (ship spans to a real collector)
 

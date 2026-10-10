@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import select
+import shlex
 import subprocess
 import threading
 from typing import Any
@@ -26,7 +27,11 @@ class MCPError(RuntimeError):
 
 class StdioMCPClient:
     def __init__(self, argv: list[str] | str, timeout: float = 30.0):
-        self.argv = argv.split() if isinstance(argv, str) else argv
+        self.argv = shlex.split(argv) if isinstance(argv, str) else list(argv)
+        if not self.argv:
+            raise ValueError("MCP server command cannot be empty")
+        if timeout <= 0:
+            raise ValueError("MCP timeout must be positive")
         self.timeout = timeout
         self._proc: subprocess.Popen[str] | None = None
         self._id = 0
@@ -35,34 +40,51 @@ class StdioMCPClient:
 
     # -- lifecycle ---------------------------------------------------------
     def start(self) -> dict[str, Any]:
-        self._proc = subprocess.Popen(
-            self.argv,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            bufsize=1,
-        )
-        result = self._rpc(
-            "initialize",
-            {
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": CLIENT_INFO,
-            },
-        )
-        self.server_info = result.get("serverInfo", {})
-        self._notify("notifications/initialized", {})
-        return result
+        if self._proc is not None:
+            raise MCPError("MCP server is already started")
+        try:
+            self._proc = subprocess.Popen(
+                self.argv,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                bufsize=1,
+            )
+            result = self._rpc(
+                "initialize",
+                {
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": CLIENT_INFO,
+                },
+            )
+            self.server_info = result.get("serverInfo", {})
+            self._notify("notifications/initialized", {})
+            return result
+        except (OSError, MCPError) as exc:
+            self.close()
+            if isinstance(exc, MCPError):
+                raise
+            raise MCPError(f"could not start MCP server {' '.join(self.argv)}: {exc}") from exc
 
     def close(self) -> None:
-        if self._proc and self._proc.poll() is None:
-            self._proc.terminate()
-            try:
-                self._proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
+        proc = self._proc
         self._proc = None
+        if proc is None:
+            return
+        if proc.stdin:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
 
     def __enter__(self) -> "StdioMCPClient":
         self.start()
@@ -89,9 +111,13 @@ class StdioMCPClient:
 
     # -- plumbing ----------------------------------------------------------
     def _send(self, payload: dict[str, Any]) -> None:
-        assert self._proc and self._proc.stdin
-        self._proc.stdin.write(json.dumps(payload) + "\n")
-        self._proc.stdin.flush()
+        if not self._proc or self._proc.poll() is not None or not self._proc.stdin:
+            raise MCPError(f"MCP server is not running: {' '.join(self.argv)}")
+        try:
+            self._proc.stdin.write(json.dumps(payload) + "\n")
+            self._proc.stdin.flush()
+        except OSError as exc:
+            raise MCPError(f"MCP server pipe failed: {exc}") from exc
 
     def _read_line(self) -> str:
         assert self._proc and self._proc.stdout
@@ -101,7 +127,10 @@ class StdioMCPClient:
             raise MCPError(f"server timed out after {self.timeout}s ({' '.join(self.argv)})")
         line = self._proc.stdout.readline()
         if not line:
-            raise MCPError(f"server closed the pipe ({' '.join(self.argv)})")
+            code = self._proc.poll()
+            raise MCPError(
+                f"server closed the pipe ({' '.join(self.argv)}; returncode={code})"
+            )
         return line
 
     def _rpc(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -110,7 +139,10 @@ class StdioMCPClient:
             req_id = self._id
             self._send({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
             while True:
-                msg = json.loads(self._read_line())
+                try:
+                    msg = json.loads(self._read_line())
+                except json.JSONDecodeError as exc:
+                    raise MCPError(f"invalid JSON from MCP server: {exc}") from exc
                 if msg.get("id") != req_id:
                     continue  # notification or unrelated message
                 if "error" in msg:
@@ -151,9 +183,10 @@ def mount_server(
     argv: list[str] | str,
     label: str | None = None,
     risk_overrides: dict[str, Risk] | None = None,
+    timeout: float = 30.0,
 ) -> tuple[StdioMCPClient, list[MCPTool]]:
     """Start a server, return (client, tools). Caller owns the client lifecycle."""
-    client = StdioMCPClient(argv)
+    client = StdioMCPClient(argv, timeout=timeout)
     client.start()
     label = label or client.server_info.get("name") or "mcp"
     tools = [MCPTool(client, spec, label, risk_overrides) for spec in client.list_tools()]

@@ -5,6 +5,7 @@ HITL policies, and tracing all speak the same small language.
 """
 from __future__ import annotations
 
+import threading
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -17,6 +18,49 @@ class Risk(str, Enum):
     READ = "read"  # no side effects (read_file, list_dir)
     WRITE = "write"  # mutates local state (write_file)
     EXECUTE = "execute"  # runs code, network, or remote side effects
+
+
+@dataclass(frozen=True)
+class RunLimits:
+    """Hard ceilings applied to one run.
+
+    ``None`` means unlimited for that dimension. Steps remain bounded by
+    default so a broken provider cannot loop forever.
+    """
+
+    max_steps: int = 12
+    max_duration_s: float | None = None
+    max_input_tokens: int | None = None
+    max_output_tokens: int | None = None
+    max_cost_usd: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.max_steps < 1:
+            raise ValueError("max_steps must be at least 1")
+        for name in ("max_duration_s", "max_input_tokens", "max_output_tokens", "max_cost_usd"):
+            value = getattr(self, name)
+            if value is not None and value < 0:
+                raise ValueError(f"{name} must be non-negative")
+
+
+class CancellationToken:
+    """Thread-safe cooperative cancellation shared by the loop and tools."""
+
+    def __init__(self) -> None:
+        self._event = threading.Event()
+        self._reason = "cancelled"
+
+    def cancel(self, reason: str = "cancelled") -> None:
+        self._reason = reason or "cancelled"
+        self._event.set()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._event.is_set()
+
+    @property
+    def reason(self) -> str:
+        return self._reason
 
 
 @dataclass(frozen=True)

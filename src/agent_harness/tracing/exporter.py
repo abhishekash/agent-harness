@@ -16,6 +16,7 @@ Format (all ints are unix nanoseconds):
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Any, Sequence
@@ -70,6 +71,9 @@ class JsonlSpanExporter(SpanExporter):
             with self._lock, self.path.open("a", encoding="utf-8") as f:
                 for span in spans:
                     f.write(json.dumps(span_to_dict(span), ensure_ascii=False) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            os.chmod(self.path, 0o600)
             return SpanExportResult.SUCCESS
         except OSError:
             return SpanExportResult.FAILURE

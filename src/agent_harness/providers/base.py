@@ -11,7 +11,10 @@ class Provider(Protocol):
 
     Implementations must be stateless across calls: the full conversation is
     passed in every time, and the returned AssistantMessage is appended by the
-    agent loop. Keeping providers dumb is what makes the loop testable.
+    agent loop. Keeping providers dumb is what makes the loop testable. A
+    provider may also expose ``summarize(messages)`` for the optional live
+    progress surface; it must use the same configured model and return an
+    ``AssistantMessage`` without tool calls.
     """
 
     model: str
