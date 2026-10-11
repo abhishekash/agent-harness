@@ -1,7 +1,7 @@
 """OpenAI-compatible chat-completions provider.
 
 This adapter is intentionally endpoint-neutral. It supports OpenAI itself and
-OpenAI-compatible services such as OpenCode Zen by changing ``base_url`` and
+OpenAI-compatible services such as OpenCode Go by changing ``base_url`` and
 ``api_key``. The harness loop remains provider-neutral; only message and tool
 schema translation lives here.
 """

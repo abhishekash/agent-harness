@@ -65,7 +65,7 @@ def _build_provider(args):
         from agent_harness.providers.opencode import OpenCodeProvider
 
         return OpenCodeProvider(
-            model=args.model or os.getenv("OPENCODE_MODEL", "big-pickle"),
+            model=args.model or os.getenv("OPENCODE_MODEL", "mimo-v2.6-pro"),
             base_url=args.base_url,
             api_key=os.getenv(args.api_key_env),
             temperature=args.temperature,

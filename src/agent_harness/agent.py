@@ -36,6 +36,9 @@ from agent_harness.types import AssistantMessage, CancellationToken, Message, Ru
 COST_TABLE: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-5-20250929": (3.0, 15.0),
     "claude-opus-4-6": (15.0, 75.0),
+    # OpenCode Go catalog prices, USD per 1M input/output tokens.
+    "mimo-v2.6-pro": (0.435, 0.87),
+    "mimo-v2.5-pro": (0.435, 0.87),
     "scripted": (0.0, 0.0),
 }
 

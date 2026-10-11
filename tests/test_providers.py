@@ -41,6 +41,16 @@ def test_script_exhaustion_raises():
         raise AssertionError("expected ProviderError")
 
 
+def test_opencode_go_defaults_and_normalizes_cli_model():
+    provider = OpenCodeProvider(
+        model="opencode-go/mimo-v2.6-pro",
+        api_key="test-key",
+        client=object(),
+    )
+    assert provider.model == "mimo-v2.6-pro"
+    assert provider.base_url == "https://opencode.ai/zen/go/v1"
+
+
 def test_opencode_provider_translates_tool_calls_and_usage():
     requests = []
 

@@ -135,7 +135,7 @@ The current run is 8/8 passing. A live-model runner should report model/version,
 
 | Artifact | Evidence |
 |---|---|
-| Harness | 64 offline tests; real demo trace with 15 spans and two approval events |
+| Harness | 65 offline tests; real demo trace with 15 spans and two approval events |
 | AgentHawk | 29 tests; the harness MCP client successfully mounted twelve query tools |
 | Skills | Four skills validated by a dependency-free frontmatter/routing checker |
 | Evals | Eight deterministic tasks passing, including denial and edited-argument safety contracts |
