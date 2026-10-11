@@ -35,6 +35,7 @@ def record_run(path: str | Path, result: RunResult) -> dict[str, Any]:
             "output_tokens": result.usage.output_tokens,
         },
         "cost_usd": round(result.cost_usd, 8),
+        "cost_known": result.cost_known,
         "approvals": [
             {
                 "tool": a.request.tool_name,

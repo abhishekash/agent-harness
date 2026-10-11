@@ -18,7 +18,14 @@ from typing import Any, Callable, Sequence
 
 from agent_harness.checkpoint import CheckpointError, CheckpointState, CheckpointStore
 from agent_harness.context import ContextError, ContextManager
-from agent_harness.hitl import ApprovalPolicy, ApprovalRecord, ApprovalRequest, Approver, AutoApprover, Decision
+from agent_harness.hitl import (
+    ApprovalPolicy,
+    ApprovalRecord,
+    ApprovalRequest,
+    Approver,
+    Decision,
+    DenyAllApprover,
+)
 from agent_harness.providers.base import Provider, ProviderError
 from agent_harness.skills import Skill, render_index
 from agent_harness.tools.base import Tool, tool_schema, validate_tool_arguments
@@ -49,9 +56,10 @@ class RunResult:
     usage: Usage
     cost_usd: float
     trace_id: str
+    cost_known: bool = True
     approvals: list[ApprovalRecord] = field(default_factory=list)
     messages: list[Message] = field(default_factory=list)
-    stopped_reason: str = "completed"  # completed | max_steps | error | cancelled | budget_exceeded | context_error | checkpoint_error
+    stopped_reason: str = "completed"  # completed | max_steps | error | cancelled | budget_exceeded | budget_unavailable | context_error | checkpoint_error
     summary: str = ""
 
 
@@ -78,13 +86,17 @@ class Agent:
     ):
         self.provider = provider
         self.tools = {t.name: t for t in tools}
-        self.approver = approver or AutoApprover()
+        # A library caller must opt into side effects explicitly. The CLI and
+        # deterministic evals pass AutoApprover when unattended execution is
+        # intentional; the Python API fails closed by default.
+        self.approver = approver if approver is not None else DenyAllApprover()
         self.policy = policy or ApprovalPolicy.default()
         self.skills = list(skills)
         self.tracer = get_tracer(tracer_provider)
         self.max_steps = max_steps
         self.system_prompt = system_prompt
-        self.cost_table = cost_table or COST_TABLE
+        self.cost_table = cost_table if cost_table is not None else COST_TABLE
+        self.cost_known = getattr(self.provider, "model", "") in self.cost_table
         self.event_handler = event_handler
         self.progress_summarizer = progress_summarizer
         self.limits = limits or RunLimits(max_steps=max_steps)
@@ -141,6 +153,7 @@ class Agent:
                             "llm.usage.input_tokens": update_usage.input_tokens,
                             "llm.usage.output_tokens": update_usage.output_tokens,
                             "llm.cost_usd": round(self._cost_usd(update_usage), 8),
+                            "llm.cost_known": self.cost_known,
                         }
                     )
                 except Exception as exc:
@@ -164,8 +177,11 @@ class Agent:
             return f"budget_exceeded: input token limit {limits.max_input_tokens}"
         if limits.max_output_tokens is not None and usage.output_tokens >= limits.max_output_tokens:
             return f"budget_exceeded: output token limit {limits.max_output_tokens}"
-        if limits.max_cost_usd is not None and self._cost_usd(usage) >= limits.max_cost_usd:
-            return f"budget_exceeded: cost limit ${limits.max_cost_usd:.4f}"
+        if limits.max_cost_usd is not None:
+            if not self.cost_known:
+                return f"budget_unavailable: no pricing for model {getattr(self.provider, 'model', 'unknown')!r}"
+            if self._cost_usd(usage) >= limits.max_cost_usd:
+                return f"budget_exceeded: cost limit ${limits.max_cost_usd:.4f}"
         return None
 
     def _save_checkpoint(
@@ -211,6 +227,7 @@ class Agent:
                         "llm.usage.input_tokens": response.usage.input_tokens,
                         "llm.usage.output_tokens": response.usage.output_tokens,
                         "llm.cost_usd": round(self._cost_usd(response.usage), 8),
+                        "llm.cost_known": self.cost_known,
                     }
                 )
                 return response
@@ -308,7 +325,13 @@ class Agent:
                 for steps in range(start_step, self.max_steps + 1):
                     reason = self._limit_reason(run_started, usage)
                     if reason:
-                        stopped = "cancelled" if reason.startswith("cancelled") else "budget_exceeded"
+                        stopped = (
+                            "cancelled"
+                            if reason.startswith("cancelled")
+                            else "budget_unavailable"
+                            if reason.startswith("budget_unavailable")
+                            else "budget_exceeded"
+                        )
                         answer = reason
                         break
 
@@ -370,13 +393,20 @@ class Agent:
                                     "llm.usage.input_tokens": msg.usage.input_tokens,
                                     "llm.usage.output_tokens": msg.usage.output_tokens,
                                     "llm.cost_usd": round(self._cost_usd(msg.usage), 8),
+                                    "llm.cost_known": self.cost_known,
                                 }
                             )
                         messages.append(Message.assistant(msg))
 
                         reason = self._limit_reason(run_started, usage)
                         if reason:
-                            stopped = "cancelled" if reason.startswith("cancelled") else "budget_exceeded"
+                            stopped = (
+                                "cancelled"
+                                if reason.startswith("cancelled")
+                                else "budget_unavailable"
+                                if reason.startswith("budget_unavailable")
+                                else "budget_exceeded"
+                            )
                             answer = reason
                             break
 
@@ -387,7 +417,13 @@ class Agent:
                             )
                             reason = self._limit_reason(run_started, usage)
                             if reason:
-                                stopped = "cancelled" if reason.startswith("cancelled") else "budget_exceeded"
+                                stopped = (
+                                    "cancelled"
+                                    if reason.startswith("cancelled")
+                                    else "budget_unavailable"
+                                    if reason.startswith("budget_unavailable")
+                                    else "budget_exceeded"
+                                )
                                 answer = reason
                             break
 
@@ -459,7 +495,13 @@ class Agent:
                                 break
                             reason = self._limit_reason(run_started, usage)
                             if reason:
-                                stopped = "cancelled" if reason.startswith("cancelled") else "budget_exceeded"
+                                stopped = (
+                                    "cancelled"
+                                    if reason.startswith("cancelled")
+                                    else "budget_unavailable"
+                                    if reason.startswith("budget_unavailable")
+                                    else "budget_exceeded"
+                                )
                                 answer = reason
                                 break
 
@@ -492,6 +534,7 @@ class Agent:
                     "agent.usage.input_tokens": usage.input_tokens,
                     "agent.usage.output_tokens": usage.output_tokens,
                     "agent.cost_usd": round(self._cost_usd(usage), 8),
+                    "agent.cost_known": self.cost_known,
                     "agent.approvals": len(approvals),
                     "agent.summary": summary[:500],
                 }
@@ -504,6 +547,7 @@ class Agent:
             steps=steps,
             usage=usage,
             cost_usd=self._cost_usd(usage),
+            cost_known=self.cost_known,
             trace_id=trace_id,
             approvals=approvals,
             messages=messages,

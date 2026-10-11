@@ -83,6 +83,12 @@ def _build_approver(name: str, policy):
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    if (args.input_price_per_million is None) != (args.output_price_per_million is None):
+        print(
+            "error: provide both --input-price-per-million and --output-price-per-million",
+            file=sys.stderr,
+        )
+        return 2
     root = Path(args.root).resolve()
     task = args.task or DEMO_TASK
     tools = default_tools(root)
@@ -129,6 +135,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         policy=RetryPolicy(max_attempts=args.retries + 1),
         cancellation=cancellation,
     )
+    cost_table = None
+    if args.input_price_per_million is not None:
+        cost_table = {
+            provider.model: (
+                args.input_price_per_million,
+                args.output_price_per_million,
+            )
+        }
     ui = MinimalTerminalUI(sys.stderr, mode=args.ui)
     progress = RollingSummary(provider) if ui.enabled else None
     initial_summary = progress.begin(task) if progress is not None else ""
@@ -155,6 +169,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             max_output_tokens=args.max_output_tokens,
             max_cost_usd=args.max_cost,
         ),
+        cost_table=cost_table,
         cancellation=cancellation,
         context_manager=context_manager,
         checkpoint_store=checkpoint_store,
@@ -191,7 +206,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"\n{result.answer}\n")
     print(
         f"run {result.trace_id[:8]} · {result.steps} steps · "
-        f"{result.usage.total} tokens · ${result.cost_usd:.4f} · "
+        f"{result.usage.total} tokens · "
+        f"{'$' + format(result.cost_usd, '.4f') if result.cost_known else 'cost unknown'} · "
         f"{len(result.approvals)} approvals · {result.stopped_reason}",
         file=sys.stderr,
     )
@@ -215,7 +231,8 @@ def cmd_runs_list(args: argparse.Namespace) -> int:
         ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(r["finished_unix"]))
         print(
             f"{r['trace_id'][:8]}  {ts}  {r['steps']:>2} steps  "
-            f"${r['cost_usd']:.4f}  {r['stopped_reason']:<10}  {r['task'][:60]}"
+            f"{('$' + format(r['cost_usd'], '.4f')) if r.get('cost_known', True) else 'cost ?':>10}  "
+            f"{r['stopped_reason']:<16}  {r['task'][:60]}"
         )
     return 0
 
@@ -250,6 +267,16 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--max-input-tokens", type=int, help="hard input-token budget")
     run.add_argument("--max-output-tokens", type=int, help="hard output-token budget")
     run.add_argument("--max-cost", type=float, help="hard estimated USD cost budget")
+    run.add_argument(
+        "--input-price-per-million",
+        type=float,
+        help="provider input price in USD per million tokens (required with output price)",
+    )
+    run.add_argument(
+        "--output-price-per-million",
+        type=float,
+        help="provider output price in USD per million tokens (required with input price)",
+    )
     run.add_argument(
         "--context-chars",
         type=int,

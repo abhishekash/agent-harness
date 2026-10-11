@@ -7,6 +7,7 @@ from agent_harness.providers import call_tool, say, scripted_run
 from agent_harness.providers.base import ProviderError
 from agent_harness.tools import default_tools
 from agent_harness.tracing import init_tracing, load_spans
+from agent_harness.types import RunLimits
 
 
 def make_agent(script, workspace, tmp_path, approver=None, **kwargs):
@@ -49,6 +50,41 @@ def test_happy_path_traces_everything(workspace, tmp_path):
     assert hitl[0]["attributes"]["hitl.decision"] == "approve"
     root = next(s for s in spans if s["name"] == "agent.run")
     assert root["attributes"]["agent.stopped_reason"] == "completed"
+
+
+def test_python_api_defaults_to_deny_all(workspace, tmp_path):
+    provider = scripted_run(
+        call_tool("write_file", {"path": "unexpected.txt", "content": "x"}),
+        say("I will not write without approval."),
+    )
+    agent = Agent(
+        provider,
+        default_tools(workspace),
+        tracer_provider=init_tracing(tmp_path / "traces.jsonl"),
+    )
+
+    result = agent.run("write the file")
+
+    assert result.stopped_reason == "completed"
+    assert not (workspace / "unexpected.txt").exists()
+    assert result.approvals[0].decision is Decision.DENY
+
+
+def test_unknown_model_pricing_is_explicit_and_blocks_cost_budget(workspace, tmp_path):
+    provider = scripted_run(say("done"))
+    provider.model = "unpriced-model"
+    agent = Agent(
+        provider,
+        default_tools(workspace),
+        tracer_provider=init_tracing(tmp_path / "traces.jsonl"),
+        limits=RunLimits(max_cost_usd=1.0),
+    )
+
+    result = agent.run("say done")
+
+    assert result.stopped_reason == "budget_unavailable"
+    assert not result.cost_known
+    assert "no pricing" in result.answer
 
 
 def test_denied_tool_feeds_reason_back(workspace, tmp_path):

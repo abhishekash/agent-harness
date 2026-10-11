@@ -3,7 +3,8 @@
 - AutoApprover:    approve everything (evals, demos — never in prod)
 - DenyAllApprover: deny everything (safety testing: assert the agent degrades gracefully)
 - CallbackApprover: wrap any python callable
-- CLIApprover:     interactive terminal gate (the default for real runs)
+- CLIApprover:     interactive terminal gate (the default for CLI runs)
+- Agent's Python API: deny-all unless an approver is supplied explicitly
 """
 from __future__ import annotations
 

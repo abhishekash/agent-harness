@@ -14,7 +14,10 @@ Agent demos usually show a final answer and hide the important questions:
 - Can another agent inspect the failure without opening a dashboard?
 - Did a prompt change improve behavior or merely improve one demo?
 
-The portfolio is organized around one answer: **make execution, human judgment, observability, and measurement share a contract.**
+The practical trigger was a trace-debugging failure: a workspace-escape attempt
+was blocked, but the trace showed only that `run_shell` had been called; it did
+not preserve the returned diagnostic. The work grew from fixing that gap: make
+execution, human judgment, observability, and measurement share one contract.
 
 ```text
 agent-harness  ──emits──▶  JSONL OTel spans  ──queried by──▶  AgentHawk
@@ -132,7 +135,7 @@ The current run is 8/8 passing. A live-model runner should report model/version,
 
 | Artifact | Evidence |
 |---|---|
-| Harness | 62 offline tests; real demo trace with 15 spans and two approval events |
+| Harness | 64 offline tests; real demo trace with 15 spans and two approval events |
 | AgentHawk | 28 tests; the harness MCP client successfully mounted twelve query tools |
 | Skills | Four skills validated by a dependency-free frontmatter/routing checker |
 | Evals | Eight deterministic tasks passing, including denial and edited-argument safety contracts |

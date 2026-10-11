@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/abhishekash/agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/abhishekash/agent-harness/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A hackable agent runtime for people who want to *see* what their agent is doing.
+A small, inspectable runtime for experimenting with human approvals and traceable tool execution. The model loop, tool boundary, approval policy, and trace exporter are deliberately visible rather than hidden behind a large framework.
 
-Most agent frameworks optimize for demos: magic in, magic out. This one optimizes for the two things production agents actually need:
+This is a reference and evaluation harness, not a blanket production-readiness claim. Its useful evidence is in the concrete boundaries it tests:
 
 1. **Human-in-the-loop as a first-class mechanism** — every tool carries a `Risk` tier (`read` / `write` / `execute`); a policy decides which tiers need a human, and every human decision (approve / deny / *edit-the-arguments*) is recorded with its rationale.
 2. **Observability you can grep** — every run is an OpenTelemetry trace: one span per step, LLM call, and tool call, exported to plain JSONL. Human decisions are span *events*, so "why did the agent do that?" is always answerable after the fact.
@@ -23,7 +23,7 @@ The default `scripted` provider is a deterministic fixture, not an intelligent
 model. Use `--provider anthropic` or `--provider opencode` for a real
 model-driven run.
 
-## Demo (real output, `--provider scripted --approve auto`)
+## Mechanism demo (scripted, not model-quality evidence)
 
 ```
 trace f920798dd2558fcb84f9977736432a8b
@@ -43,7 +43,30 @@ agent.run       4.0ms
 total: 4.0ms across 15 spans
 ```
 
-Full artifacts in [`examples/`](examples/demo_trace.jsonl): raw JSONL spans, run-store record, rendered timeline, and an [asciinema recording](examples/demo.cast) of the real CLI run.
+This run intentionally uses the deterministic `ScriptedProvider` and automatic
+approval. It proves that the loop, tool calls, approval events, and JSONL
+export fit together; it does **not** show a model making a good decision or
+prove isolation under adversarial execution. Full artifacts in
+[`examples/`](examples/demo_trace.jsonl) include raw JSONL spans, the run-store
+record, the rendered timeline, and an [asciinema recording](examples/demo.cast).
+
+## The useful live case study
+
+The strongest scenario to evaluate is not the happy-path demo: ask a live model
+to write to an unsafe destination, edit the proposed arguments at the approval
+gate, then query the trace for the proposed path, edited path, decision, and
+result. The checked-in `edited-write` task demonstrates the mechanism
+reproducibly; run it against a real provider to make a model-quality claim:
+
+```bash
+export OPENCODE_API_KEY="..."       # keep credentials out of task files and commits
+agent-evals run --only edited-write \
+  --provider opencode --repeats 3 --out results/live-edited-write
+```
+
+Report the pass rate, each failed scorer, latency, cost, and trace ID. Do not
+substitute the scripted result for this evidence; a live result needs a real
+key and should be reviewed with its limitations.
 
 ## Minimal live run view
 
@@ -89,7 +112,16 @@ harness run "task" \
 
 The harness writes an atomic, user-only checkpoint alongside the trace. A
 completed run removes it; an interrupted or budget-limited run prints a resume
-command:
+command. Unknown model pricing is reported as unknown rather than silently
+counted as zero; a configured `--max-cost` refuses to run without pricing.
+For a model not in the built-in table, provide both
+`--input-price-per-million` and `--output-price-per-million`:
+
+```bash
+harness run "task" --provider opencode \
+  --input-price-per-million 3 --output-price-per-million 15 \
+  --max-cost 2.50
+```
 
 ```bash
 harness run --resume traces/harness-<timestamp>.jsonl.checkpoint.json \
@@ -109,6 +141,10 @@ from agent_harness.hitl import ApprovalPolicy, CLIApprover
 policy = ApprovalPolicy.default()            # READ free, WRITE/EXECUTE gated
 agent = Agent(provider, tools, policy=policy, approver=CLIApprover(policy=policy))
 ```
+
+The Python API defaults to a deny-all approver when `approver` is omitted.
+Pass `AutoApprover()` explicitly only for a controlled fixture or unattended
+evaluation; the CLI defaults to the interactive gate.
 
 Interactive gate (stderr):
 
@@ -178,7 +214,7 @@ The agent's system prompt gets the *index* (name + description) only; bodies loa
 
 ## Testing philosophy
 
-62 tests, zero network. The loop, HITL matrix, sandbox escapes, MCP protocol, retry behavior, context compaction, checkpoint/resume boundaries, trace rendering, tool-error observability, and two-line progress surface are all tested against deterministic providers and a hand-rolled NDJSON MCP fixture server (`tests/fixtures/echo_mcp_server.py`). Live-provider quality and the end-to-end shell-boundary debugging story are evaluated separately by [`agent-evals`](https://github.com/abhishekash/agent-evals).
+64 tests, zero network. The loop, HITL matrix, sandbox escapes, MCP protocol, retry behavior, context compaction, checkpoint/resume boundaries, trace rendering, tool-error observability, cost-budget handling, and two-line progress surface are all tested against deterministic providers and a hand-rolled NDJSON MCP fixture server (`tests/fixtures/echo_mcp_server.py`). Live-provider quality and the end-to-end shell-boundary debugging story are evaluated separately by [`agent-evals`](https://github.com/abhishekash/agent-evals).
 
 ## Design postmortem
 
