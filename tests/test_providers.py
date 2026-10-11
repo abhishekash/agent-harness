@@ -41,14 +41,53 @@ def test_script_exhaustion_raises():
         raise AssertionError("expected ProviderError")
 
 
-def test_opencode_go_defaults_and_normalizes_cli_model():
+def test_opencode_go_defaults_and_normalizes_cli_model(monkeypatch):
+    monkeypatch.delenv("OPENCODE_BASE_URL", raising=False)
+    default = OpenCodeProvider(api_key="test-key", client=object())
+    assert default.model == "mimo-v2.6-pro"
+    assert default.base_url == "https://opencode.ai/zen/go/v1"
     provider = OpenCodeProvider(
         model="opencode-go/mimo-v2.6-pro",
         api_key="test-key",
         client=object(),
     )
-    assert provider.model == "mimo-v2.6-pro"
-    assert provider.base_url == "https://opencode.ai/zen/go/v1"
+    assert provider.model == default.model
+
+
+def test_opencode_go_honest_headers_cover_turns_and_summaries():
+    from agent_harness import __version__
+
+    requests = []
+
+    def create(**request):
+        requests.append(request)
+        return {"choices": [{"message": {"content": "done"}}]}
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    provider = OpenCodeProvider(api_key="test-key", client=client)
+    provider.complete([Message.user("task")], [])
+    provider.complete([Message.user("continue")], [])
+    provider.summarize([Message.user("summarize")])
+    for request in requests:
+        assert request["extra_headers"] == {
+            "User-Agent": f"agent-harness/{__version__}",
+            "x-opencode-session": provider.session_id,
+        }
+    # Repetitions must not share a conversation identity.
+    another = OpenCodeProvider(api_key="test-key", client=client)
+    assert another.session_id != provider.session_id
+    explicit = OpenCodeProvider(api_key="test-key", client=client, session_id="eval-session-1")
+    assert explicit.session_id == "eval-session-1"
+
+
+def test_opencode_go_url_override_precedence(monkeypatch):
+    monkeypatch.setenv("OPENCODE_BASE_URL", "https://env.example/v1")
+    env = OpenCodeProvider(api_key="test-key", client=object())
+    assert env.base_url == "https://env.example/v1"
+    explicit = OpenCodeProvider(
+        api_key="test-key", client=object(), base_url="https://explicit.example/v1"
+    )
+    assert explicit.base_url == "https://explicit.example/v1"
 
 
 def test_opencode_provider_translates_tool_calls_and_usage():

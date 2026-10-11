@@ -92,6 +92,7 @@ class OpenAIProvider:
         temperature: float | None = None,
         timeout: float = 60.0,
         client: Any | None = None,
+        request_headers: dict[str, str] | None = None,
     ):
         if client is None:
             if OpenAI is None:  # pragma: no cover
@@ -108,6 +109,7 @@ class OpenAIProvider:
         self.temperature = temperature
         self.base_url = base_url
         self._client = client
+        self._request_headers = dict(request_headers or {})
 
     def _complete(
         self,
@@ -125,6 +127,10 @@ class OpenAIProvider:
             request["tools"] = _to_api_tools(tools)
         if self.temperature is not None:
             request["temperature"] = self.temperature
+        if self._request_headers:
+            # Request-level headers also apply to injected clients and every
+            # auxiliary call, not just the client's construction defaults.
+            request["extra_headers"] = dict(self._request_headers)
 
         try:
             response = self._client.chat.completions.create(**request)

@@ -62,10 +62,10 @@ def _build_provider(args):
             kwargs["temperature"] = args.temperature
         return AnthropicProvider(model=model, **kwargs)
     if args.provider == "opencode":
-        from agent_harness.providers.opencode import OpenCodeProvider
+        from agent_harness.providers.opencode import DEFAULT_MODEL, OpenCodeProvider
 
         return OpenCodeProvider(
-            model=args.model or os.getenv("OPENCODE_MODEL", "mimo-v2.6-pro"),
+            model=args.model or os.getenv("OPENCODE_MODEL", DEFAULT_MODEL),
             base_url=args.base_url,
             api_key=os.getenv(args.api_key_env),
             temperature=args.temperature,
