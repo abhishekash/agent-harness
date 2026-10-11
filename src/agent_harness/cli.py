@@ -237,7 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--approve", choices=["cli", "auto", "deny"], default="cli")
     run.add_argument("--trace", help="trace output path (default: traces/harness-<ts>.jsonl)")
     run.add_argument("--skills", action="append", help="directory containing <name>/SKILL.md skills")
-    run.add_argument("--mcp", action="append", help="MCP server command to mount, e.g. 'uvx mcp-trace'")
+    run.add_argument("--mcp", action="append", help="MCP server command to mount, e.g. 'uvx agenthawk'")
     run.add_argument("--mcp-timeout", type=float, default=30.0, help="MCP request timeout in seconds")
     run.add_argument(
         "--ui",

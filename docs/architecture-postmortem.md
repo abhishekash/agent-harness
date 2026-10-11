@@ -2,7 +2,7 @@
 
 Date: 2026-10-08
 
-This is the design record for `agent-harness`, `mcp-trace`, `agent-skills`, and `agent-evals`. It documents what was built, what was deliberately not built, and what the first deterministic results actually prove.
+This is the design record for `agent-harness`, `AgentHawk`, `agent-skills`, and `agent-evals`. It documents what was built, what was deliberately not built, and what the first deterministic results actually prove.
 
 ## The problem
 
@@ -17,7 +17,7 @@ Agent demos usually show a final answer and hide the important questions:
 The portfolio is organized around one answer: **make execution, human judgment, observability, and measurement share a contract.**
 
 ```text
-agent-harness  ──emits──▶  JSONL OTel spans  ──queried by──▶  mcp-trace
+agent-harness  ──emits──▶  JSONL OTel spans  ──queried by──▶  AgentHawk
       │                                                          │
       └────────────── exercised and scored by agent-evals ◀──────┘
                               ▲
@@ -68,7 +68,7 @@ Every run has a root `agent.run` span. Each model turn, provider call, and tool 
 }
 ```
 
-This makes an approval auditable without requiring a second logging system. `mcp-trace` can answer "what did the human deny?" using the same data that `harness trace render` displays.
+This makes an approval auditable without requiring a second logging system. AgentHawk can answer "what did the human deny?" using the same data that `harness trace render` displays.
 
 ### 4. JSONL is the first trace transport
 
@@ -84,7 +84,7 @@ The format is shaped like OTel spans but is not a replacement for OTLP. OTLP exp
 
 ### 5. MCP is the self-observability boundary
 
-`mcp-trace` is a thin MCP 2.x server over pure query functions. It exposes:
+AgentHawk is a thin MCP 2.x server over pure query functions. It exposes:
 
 - recent run summaries;
 - nested span trees;
@@ -132,8 +132,8 @@ The current run is 8/8 passing. A live-model runner should report model/version,
 
 | Artifact | Evidence |
 |---|---|
-| Harness | 59 offline tests; real demo trace with 15 spans and two approval events |
-| MCP server | 19 tests; the harness MCP client successfully mounted all seven query tools |
+| Harness | 62 offline tests; real demo trace with 15 spans and two approval events |
+| AgentHawk | 28 tests; the harness MCP client successfully mounted twelve query tools |
 | Skills | Four skills validated by a dependency-free frontmatter/routing checker |
 | Evals | Eight deterministic tasks passing, including denial and edited-argument safety contracts |
 | Operations | GitHub Actions green; MIT licenses; contributor guides; `v0.1.0` releases |
@@ -143,7 +143,7 @@ The current run is 8/8 passing. A live-model runner should report model/version,
 1. **The trace contract became the integration surface.** Once spans had stable names and attributes, the MCP server and eval runner were straightforward. Without that contract, each project would invent its own logging.
 2. **Human edit is more valuable than human approval.** Approval prevents an unsafe call; edit lets a human redirect a basically-correct call without spending another model turn.
 3. **Deterministic providers expose runtime bugs quickly.** They make it possible to assert the exact number of tool calls, the exact side effect, and the exact approval event before introducing model nondeterminism.
-4. **Install truth matters.** A README must not say `uvx mcp-trace` until the package is actually on PyPI. The repository now publishes the unique `abhishekash-mcp-trace` distribution, exposes the `mcp-trace` command, and is active in the official MCP Registry.
+4. **Install truth matters.** A README must not claim a package is published before it is available. AgentHawk is the canonical `agenthawk` distribution and preserves the legacy `mcp-trace` command during migration.
 
 ## Known limits
 

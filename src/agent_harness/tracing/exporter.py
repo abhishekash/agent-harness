@@ -1,7 +1,7 @@
 """OpenTelemetry → JSONL.
 
 One JSON object per span, one line per span. This file is the shared contract
-of the whole ecosystem: `mcp-trace` reads it, `agent-evals` scores from it,
+of the whole ecosystem: AgentHawk reads it, `agent-evals` scores from it,
 and `harness trace render` turns it back into a timeline.
 
 Format (all ints are unix nanoseconds):

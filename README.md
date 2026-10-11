@@ -66,7 +66,7 @@ is not detected as interactive.
 
 | Decision | Rationale |
 |---|---|
-| Human decisions are **trace events**, not logs | Audit trail that survives the session; queryable by tools (see [mcp-trace](https://github.com/abhishekash/mcp-trace)) |
+| Human decisions are **trace events**, not logs | Audit trail that survives the session; queryable by tools (see [AgentHawk](https://github.com/abhishekash/agenthawk)) |
 | Approver is a **protocol** (`auto` / `cli` / `callback` / `deny-all`) | Same loop runs unattended evals and interactive prod; `deny-all` exists to test graceful degradation |
 | **EDIT is a decision type**, not just yes/no | Real HITL means the human can fix the call ("not `../etc`, `safe.txt`") and the agent proceeds with corrected args |
 | JSONL span files as the **shared contract** | Traces are data: the MCP server, the evals repo, and the CLI renderer all read the same format |
@@ -148,14 +148,14 @@ Providers: `scripted` (deterministic, offline), `anthropic`, and OpenAI-compatib
 ## MCP: mount a server as tools
 
 ```bash
-harness run "Why was run 3f2a slow?" --mcp "uvx abhishekash-mcp-trace --trace-dir ./traces" --approve cli
+harness run "Why was run 3f2a slow?" --mcp "uvx agenthawk --trace-dir ./traces" --approve cli
 ```
 
-Remote tools are namespaced (`mcp-trace__slowest_spans`) and default to `Risk.EXECUTE` — i.e. **gated until you say otherwise**:
+Remote tools are namespaced (`agenthawk__slowest_spans`) and default to `Risk.EXECUTE` — i.e. **gated until you say otherwise**:
 
 ```python
 client, tools = mount_server(
-    ["uvx", "abhishekash-mcp-trace"],
+    ["uvx", "agenthawk"],
     risk_overrides={"list_runs": Risk.READ},
 )
 ```
