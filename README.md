@@ -9,7 +9,9 @@ This is a reference and evaluation harness, not a blanket production-readiness c
 1. **Human-in-the-loop as a first-class mechanism** — every tool carries a `Risk` tier (`read` / `write` / `execute`); a policy decides which tiers need a human, and every human decision (approve / deny / *edit-the-arguments*) is recorded with its rationale.
 2. **Observability you can grep** — every run is an OpenTelemetry trace: one span per step, LLM call, and tool call, exported to plain JSONL. Human decisions are span *events*, so "why did the agent do that?" is always answerable after the fact.
 
-Plus the extension points that matter in 2026: mount any **stdio MCP server** as tools (zero-SDK client included), load **Agent Skills** (`SKILL.md`) with progressive disclosure, and run with explicit budgets, retries, context compaction, and crash-safe checkpoints.
+The runtime also supports mounting **stdio MCP servers** as tools (with a
+small client), loading **Agent Skills** (`SKILL.md`) progressively, and
+configuring budgets, retries, context compaction, and crash-safe checkpoints.
 
 ```bash
 pip install -e ".[dev,opencode]" # add `,anthropic` for Anthropic
@@ -50,9 +52,10 @@ prove isolation under adversarial execution. Full artifacts in
 [`examples/`](examples/demo_trace.jsonl) include raw JSONL spans, the run-store
 record, the rendered timeline, and an [asciinema recording](examples/demo.cast).
 
-## The useful live case study
+## Live case-study recipe (requires a real provider)
 
-The strongest scenario to evaluate is not the happy-path demo: ask a live model
+There is no checked-in live-model result yet. The strongest scenario to run is
+not the happy-path demo: ask a live model
 to write to an unsafe destination, edit the proposed arguments at the approval
 gate, then query the trace for the proposed path, edited path, decision, and
 result. The checked-in `edited-write` task demonstrates the mechanism
@@ -98,7 +101,7 @@ is not detected as interactive.
 
 ## Reliability controls
 
-Runs are bounded by default and can be made stricter for production:
+Runs are bounded by default and can be configured for unattended experiments:
 
 ```bash
 harness run "task" \
