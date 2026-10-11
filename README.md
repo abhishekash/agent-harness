@@ -15,7 +15,7 @@ Plus the extension points that matter in 2026: mount any **stdio MCP server** as
 pip install -e ".[dev,opencode]" # add `,anthropic` for Anthropic
 harness run "Summarize notes.md into SUMMARY.md"   # scripted demo, no API key needed
 # OpenCode-compatible live run (keep the key in the environment)
-# OPENCODE_API_KEY=... harness run "inspect the workspace" --provider opencode --approve auto
+# OPENCODE_API_KEY=... harness run "inspect the workspace" --provider opencode --approve cli
 harness trace render traces/harness-*.jsonl
 ```
 
