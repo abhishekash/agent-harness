@@ -96,7 +96,8 @@ class OpenAIProvider:
         if client is None:
             if OpenAI is None:  # pragma: no cover
                 raise ProviderError(
-                    "openai package not installed; run `pip install agent-harness[opencode]`"
+                    "openai package not installed; install `agent-harness[opencode]` "
+                    "or `agent-evals[opencode]` for live evaluations"
                 )
             key = api_key or os.getenv("OPENAI_API_KEY")
             if not key:
