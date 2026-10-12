@@ -1,4 +1,6 @@
 """End-to-end agent tests: scripted provider through the real loop."""
+import json
+
 import pytest
 
 from agent_harness.agent import Agent
@@ -45,11 +47,61 @@ def test_happy_path_traces_everything(workspace, tmp_path):
     names = [s["name"] for s in spans]
     assert names.count("llm.complete") == 3
     assert names.count("tool.call") == 2
+    assert all("tool.arguments" not in s["attributes"] and "tool.result" not in s["attributes"]
+               for s in spans if s["name"] == "tool.call")
     hitl = [e for s in spans for e in s["events"] if e["name"] == "hitl.decision"]
     assert len(hitl) == 1
     assert hitl[0]["attributes"]["hitl.decision"] == "approve"
     root = next(s for s in spans if s["name"] == "agent.run")
     assert root["attributes"]["agent.stopped_reason"] == "completed"
+
+
+def test_tool_io_capture_is_opt_in_and_bounded(workspace, tmp_path):
+    (workspace / "small.txt").write_text("identical document")
+    agent, tp, path = make_agent(
+        [call_tool("read_file", {"path": "small.txt"}), say("done")],
+        workspace, tmp_path, capture_tool_io=True,
+    )
+    agent.run("read")
+    tp.force_flush()
+    attrs = next(s["attributes"] for s in load_spans(path) if s["name"] == "tool.call")
+    assert json.loads(attrs["tool.proposed_arguments"]) == {"path": "small.txt"}
+    assert json.loads(attrs["tool.arguments"]) == {"path": "small.txt"}
+    assert attrs["tool.result"] == "identical document"
+    assert attrs["tool.result_truncated"] is False
+
+    (workspace / "large.txt").write_text("x" * 5000)
+    other = tmp_path / "other"
+    other.mkdir()
+    agent, tp, path = make_agent(
+        [call_tool("read_file", {"path": "large.txt"}), say("done")],
+        workspace, other, capture_tool_io=True,
+    )
+    agent.run("read")
+    tp.force_flush()
+    attrs = next(s["attributes"] for s in load_spans(path) if s["name"] == "tool.call")
+    assert attrs["tool.result_truncated"] is True
+    assert "tool.result" not in attrs
+
+
+def test_tool_io_capture_tracks_edited_arguments(workspace, tmp_path):
+    from agent_harness.hitl import ApprovalRecord
+
+    def edit(request):
+        return ApprovalRecord(request, Decision.EDIT, approver="test", edited_arguments={
+            "path": "actual.txt", "content": "approved",
+        })
+
+    agent, tp, path = make_agent(
+        [call_tool("write_file", {"path": "proposed.txt", "content": "original"}), say("done")],
+        workspace, tmp_path, approver=CallbackApprover(edit), capture_tool_io=True,
+    )
+    agent.run("write")
+    tp.force_flush()
+    attrs = next(s["attributes"] for s in load_spans(path) if s["name"] == "tool.call")
+    assert json.loads(attrs["tool.proposed_arguments"])["path"] == "proposed.txt"
+    assert json.loads(attrs["tool.arguments"])["path"] == "actual.txt"
+    assert (workspace / "actual.txt").read_text() == "approved"
 
 
 def test_python_api_defaults_to_deny_all(workspace, tmp_path):

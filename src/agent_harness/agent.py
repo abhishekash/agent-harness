@@ -86,6 +86,7 @@ class Agent:
         context_manager: ContextManager | None = None,
         checkpoint_store: CheckpointStore | None = None,
         resume: bool = False,
+        capture_tool_io: bool = False,
     ):
         self.provider = provider
         self.tools = {t.name: t for t in tools}
@@ -108,6 +109,8 @@ class Agent:
         self.context_manager = context_manager
         self.checkpoint_store = checkpoint_store
         self.resume = resume
+        # Opt in only for reviewed, local debugging runs: tool I/O can contain secrets.
+        self.capture_tool_io = capture_tool_io
 
     # -- helpers ------------------------------------------------------------
     def _cost_usd(self, usage: Usage) -> float:
@@ -559,8 +562,21 @@ class Agent:
         )
 
     @staticmethod
-    def _record_tool_result(span, result: str) -> None:
+    def _capture_arguments(span, key: str, arguments: Any) -> None:
+        import json
+
+        # JSON encoding preserves argument structure; only capture bounded values.
+        text = json.dumps(arguments, ensure_ascii=False, default=str)
+        span.set_attribute(key + "_truncated", len(text) > 4000)
+        if len(text) <= 4000:
+            span.set_attribute(key, text)
+
+    def _record_tool_result(self, span, result: str) -> None:
         text = str(result)
+        if self.capture_tool_io and not text.startswith(("error:", "denied by human")):
+            span.set_attribute("tool.result_truncated", len(text) > 4000)
+            if len(text) <= 4000:
+                span.set_attribute("tool.result", text)
         if text.startswith("denied by human"):
             span.set_attribute("tool.result_status", "denied")
             span.set_attribute("tool.error_message", text[:500])
@@ -580,6 +596,8 @@ class Agent:
                     "tool.call_id": call.id,
                 }
             )
+            if self.capture_tool_io:
+                self._capture_arguments(span, "tool.proposed_arguments", call.arguments)
             if tool is None:
                 result = f"error: unknown tool {call.name!r}; available: {sorted(self.tools)}"
                 span.set_attribute("tool.error", "unknown_tool")
@@ -620,6 +638,8 @@ class Agent:
                         return edited_error
                     call = type(call)(id=call.id, name=call.name, arguments=record.edited_arguments)
 
+            if self.capture_tool_io:
+                self._capture_arguments(span, "tool.arguments", call.arguments)
             started = time.perf_counter()
             try:
                 result = tool.run(**call.arguments)

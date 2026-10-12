@@ -2,12 +2,12 @@
 
 [![CI](https://github.com/abhishekash/agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/abhishekash/agent-harness/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A small, inspectable runtime for experimenting with human approvals and traceable tool execution. The model loop, tool boundary, approval policy, and trace exporter are deliberately visible rather than hidden behind a large framework.
+A small, inspectable reference runtime for experimenting with human approvals and traceable tool execution. The model loop, tool boundary, approval policy, and trace exporter are easy to follow in the source.
 
-This is a reference and evaluation harness, not a blanket production-readiness claim. Its useful evidence is in the concrete boundaries it tests:
+Two mechanisms anchor the design:
 
 1. **Human-in-the-loop as a first-class mechanism** — every tool carries a `Risk` tier (`read` / `write` / `execute`); a policy decides which tiers need a human, and every human decision (approve / deny / *edit-the-arguments*) is recorded with its rationale.
-2. **Observability you can grep** — every run is an OpenTelemetry trace: one span per step, LLM call, and tool call, exported to plain JSONL. Human decisions are span *events*, so "why did the agent do that?" is always answerable after the fact.
+2. **Observability you can grep** — every run is an OpenTelemetry trace: one span per step, LLM call, and tool call, exported to plain JSONL. Approval decisions and their recorded rationales are span *events*, so you can reconstruct the tool-call sequence and review approvals after a run.
 
 The runtime also supports mounting **stdio MCP servers** as tools (with a
 small client), loading **Agent Skills** (`SKILL.md`) progressively, and
@@ -21,11 +21,10 @@ harness run "Summarize notes.md into SUMMARY.md"   # scripted demo, no API key n
 harness trace render traces/harness-*.jsonl
 ```
 
-The default `scripted` provider is a deterministic fixture, not an intelligent
-model. Use `--provider anthropic` or `--provider opencode` for a real
-model-driven run.
+The default `scripted` provider runs an offline fixture. Select
+`--provider anthropic` or `--provider opencode` for a model-driven run.
 
-## Mechanism demo (scripted, not model-quality evidence)
+## Scripted demo
 
 ```
 trace f920798dd2558fcb84f9977736432a8b
@@ -45,31 +44,10 @@ agent.run       4.0ms
 total: 4.0ms across 15 spans
 ```
 
-This run intentionally uses the deterministic `ScriptedProvider` and automatic
-approval. It proves that the loop, tool calls, approval events, and JSONL
-export fit together; it does **not** show a model making a good decision or
-prove isolation under adversarial execution. Full artifacts in
-[`examples/`](examples/demo_trace.jsonl) include raw JSONL spans, the run-store
-record, the rendered timeline, and an [asciinema recording](examples/demo.cast).
-
-## Live case-study recipe (requires a real provider)
-
-There is no checked-in live-model result yet. The strongest scenario to run is
-not the happy-path demo: ask a live model
-to write to an unsafe destination, edit the proposed arguments at the approval
-gate, then query the trace for the proposed path, edited path, decision, and
-result. The checked-in `edited-write` task demonstrates the mechanism
-reproducibly; run it against a real provider to make a model-quality claim:
-
-```bash
-export OPENCODE_API_KEY="..."       # keep credentials out of task files and commits
-agent-evals run --only edited-write \
-  --provider opencode --repeats 3 --out results/live-edited-write
-```
-
-Report the pass rate, each failed scorer, latency, cost, and trace ID. Do not
-substitute the scripted result for this evidence; a live result needs a real
-key and should be reviewed with its limitations.
+This fixture exercises tool execution, automatic approval, and trace export.
+See the [raw spans](examples/demo_trace.jsonl),
+[rendered timeline](examples/demo_trace_render.txt), and
+[CLI recording](examples/demo.cast).
 
 ## Minimal live run view
 
@@ -81,7 +59,7 @@ the run; summary calls are traced and included in token/cost accounting. The
 summary is display state, not a replacement for the agent's full context.
 
 ```bash
-harness run "inspect the service and fix the failing test"
+harness run "inspect the workspace and summarize its structure" --provider opencode
 harness run "task" --ui never       # plain/batch mode; no summary calls
 ```
 
@@ -93,7 +71,7 @@ is not detected as interactive.
 | Decision | Rationale |
 |---|---|
 | Human decisions are **trace events**, not logs | Audit trail that survives the session; queryable by tools (see [AgentHawk](https://github.com/abhishekash/agenthawk)) |
-| Approver is a **protocol** (`auto` / `cli` / `callback` / `deny-all`) | Same loop runs unattended evals and interactive prod; `deny-all` exists to test graceful degradation |
+| Approver is a **protocol** (`auto` / `cli` / `callback` / `deny-all`) | Same loop runs unattended evals and interactive sessions; `deny-all` exists to test graceful degradation |
 | **EDIT is a decision type**, not just yes/no | Real HITL means the human can fix the call ("not `../etc`, `safe.txt`") and the agent proceeds with corrected args |
 | JSONL span files as the **shared contract** | Traces are data: the MCP server, the evals repo, and the CLI renderer all read the same format |
 | **ScriptedProvider** for tests/demos | Deterministic agentic loops offline; no VCR cassettes, no flaky API mocks |
@@ -101,7 +79,7 @@ is not detected as interactive.
 
 ## Reliability controls
 
-Runs are bounded by default and can be configured for unattended experiments:
+Configure duration, token, and estimated cost limits for a run:
 
 ```bash
 harness run "task" \
@@ -165,21 +143,25 @@ Interactive gate (stderr):
 
 ## Architecture
 
-```
-                 ┌────────────────────────── Agent.run(task) ──────────────────────────┐
-                 │                                                                      │
-   system prompt │  ┌──────────┐   tool_calls   ┌─────────────┐   result   ┌────────┐  │  spans:
-   + skill index ┼─▶│ provider │───────────────▶│  HITL gate  │──────────▶│  tool  │  │  agent.run
-                 │  │ (pluggable)│◀──────────────│ risk policy │◀──────────│ (sandbox)│  │  ├─ agent.step
-                 │  └──────────┘   tool result   └──────┬──────┘            └────────┘  │  │   ├─ llm.complete (tokens, $)
-                 │                                      │ approve/deny/edit              │  │   └─ tool.call (risk, duration)
-                 │                              🔐 decision + rationale                 │  │      └─ event: hitl.decision
-                 │                              → trace event                           │
-                 └──────────────────────────────────────────────────────────────────────┘
-                                        │
-                                        ▼
-                          traces/*.jsonl  (OTel spans, one per line)
-                          runs.jsonl      (task, cost, approvals per run)
+```text
+                      Agent.run(task)
+  system prompt
+  + skill index
+        │
+        ▼
+  ┌──────────┐ tool calls ┌─────────────┐ approved call ┌────────────────┐
+  │ Provider │───────────▶│ HITL gate   │──────────────▶│ Tool execution │
+  │          │◀──────────│ Risk policy │◀──────────────│                │
+  └──────────┘  results  └─────────────┘    result     └────────────────┘
+                                │
+                     decision + recorded rationale
+                                ▼
+  traces/*.jsonl                 runs.jsonl
+    agent.run                      task, cost, approvals, outcome
+      agent.step
+        llm.complete
+        tool.call
+          hitl.decision event
 ```
 
 Providers: `scripted` (deterministic, offline), `anthropic`, and OpenAI-compatible `opencode` (optional extras), plus a conservative retry wrapper for transient transport/rate-limit/server failures. Adding one = implement `complete(messages, tools) -> AssistantMessage`; optionally add `summarize(messages)` for same-model summaries and context handoffs.
@@ -215,15 +197,28 @@ The agent's system prompt gets the *index* (name + description) only; bodies loa
 | `harness trace render FILE [--trace-id ID]` | Timeline with tokens, cost, human decisions |
 | `harness runs list [--runs-db FILE]` | Local run store: steps, cost, outcome |
 
+## Optional tool I/O evidence
+
+The Python API accepts `Agent(..., capture_tool_io=True)` for controlled local
+runs. By default, traces contain tool names, call IDs, statuses, and bounded
+errors **without** successful outputs or argument bodies. Opting in records
+JSON `tool.proposed_arguments`, JSON `tool.arguments` (after any human edit),
+and successful `tool.result` on `tool.call` spans. Each value is limited to
+4,000 characters; oversized values are omitted and marked with a
+`*_truncated` attribute, never presented as complete. This is not redaction:
+arguments and outputs can contain credentials or private document text. Only
+opt in for reviewed fixtures, and inspect traces before sharing them. JSONL
+trace files are written with user-only permissions.
+
 ## Testing philosophy
 
-65 tests, zero network. The loop, HITL matrix, sandbox escapes, MCP protocol, retry behavior, context compaction, checkpoint/resume boundaries, trace rendering, tool-error observability, cost-budget handling, OpenCode Go defaults, and two-line progress surface are all tested against deterministic providers and a hand-rolled NDJSON MCP fixture server (`tests/fixtures/echo_mcp_server.py`). Live-provider quality and the end-to-end shell-boundary debugging story are evaluated separately by [`agent-evals`](https://github.com/abhishekash/agent-evals).
+65 tests, zero network. The loop, HITL matrix, workspace path checks, MCP protocol, retry behavior, context compaction, checkpoint/resume boundaries, trace rendering, tool-error observability, cost-budget handling, OpenCode Go defaults, and two-line progress surface are all tested against deterministic providers and a hand-rolled NDJSON MCP fixture server (`tests/fixtures/echo_mcp_server.py`). The companion [`agent-evals`](https://github.com/abhishekash/agent-evals) project checks runtime contracts and supports repeated live-provider trials. Published evidence is currently scripted; see the [live evaluation guide](docs/live-evaluation.md) for setup and reporting.
 
 ## Design postmortem
 
 Read the [architecture postmortem](docs/architecture-postmortem.md) for the decisions behind the shared trace contract, HITL model, MCP boundary, deterministic evals, and known limits.
 
-## Honest limitations
+## Limitations
 
 - **Single-agent, single-threaded.** No sub-agent orchestration yet — the trace format is designed for it (parent spans), the loop isn't.
 - Context compaction uses an approximate character budget rather than provider-native token counting; long-running production workloads should tune `--context-chars` and validate against their model.
