@@ -70,7 +70,7 @@ is not detected as interactive.
 
 | Decision | Rationale |
 |---|---|
-| Human decisions are **trace events**, not logs | Audit trail that survives the session; queryable by tools (see [AgentHawk](https://github.com/abhishekash/agenthawk)) |
+| Human decisions are **trace events**, not logs | Audit trail that survives the session; queryable by tools (see [mcp-trace-inspector](https://github.com/abhishekash/mcp-trace-inspector)) |
 | Approver is a **protocol** (`auto` / `cli` / `callback` / `deny-all`) | Same loop runs unattended evals and interactive sessions; `deny-all` exists to test graceful degradation |
 | **EDIT is a decision type**, not just yes/no | Real HITL means the human can fix the call ("not `../etc`, `safe.txt`") and the agent proceeds with corrected args |
 | JSONL span files as the **shared contract** | Traces are data: the MCP server, the evals repo, and the CLI renderer all read the same format |
