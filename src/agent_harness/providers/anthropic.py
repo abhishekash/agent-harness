@@ -25,7 +25,20 @@ def _split_system(messages: Sequence[Message]) -> tuple[str, list[Message]]:
 
 def _to_api_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    tool_results: list[dict[str, Any]] = []
+
+    def flush_tool_results() -> None:
+        if tool_results:
+            out.append({"role": "user", "content": tool_results.copy()})
+            tool_results.clear()
+
     for m in messages:
+        if m.role == "tool":
+            tool_results.append(
+                {"type": "tool_result", "tool_use_id": m.tool_call_id, "content": m.content}
+            )
+            continue
+        flush_tool_results()
         if m.role == "assistant":
             blocks: list[dict[str, Any]] = []
             if m.content:
@@ -35,21 +48,9 @@ def _to_api_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
                     {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
                 )
             out.append({"role": "assistant", "content": blocks})
-        elif m.role == "tool":
-            out.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": m.tool_call_id,
-                            "content": m.content,
-                        }
-                    ],
-                }
-            )
-        elif m.role in ("user",):
+        elif m.role == "user":
             out.append({"role": "user", "content": m.content})
+    flush_tool_results()
     return out
 
 

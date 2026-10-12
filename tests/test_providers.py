@@ -8,7 +8,7 @@ from agent_harness.providers import (
     say,
     scripted_run,
 )
-from agent_harness.types import Message
+from agent_harness.types import Message, ToolCall
 
 
 def test_scripted_provider_replays_turns():
@@ -177,3 +177,22 @@ def test_callable_script_items_see_conversation():
     p.complete([], [])
     p.complete([say_to_msg("a"), say_to_msg("b")], [])
     assert seen["n"] == 2
+
+
+def test_anthropic_groups_parallel_tool_results_in_one_user_message():
+    from agent_harness.providers.anthropic import _to_api_messages
+
+    calls = [ToolCall("one", "read_file", {"path": "a"}), ToolCall("two", "read_file", {"path": "b"})]
+    messages = [
+        Message.user("read both"),
+        Message(role="assistant", content="", tool_calls=calls),
+        Message.tool_result(calls[0], "a"),
+        Message.tool_result(calls[1], "b"),
+        Message.user("continue"),
+    ]
+
+    translated = _to_api_messages(messages)
+    assert len(translated) == 4
+    assert translated[2]["role"] == "user"
+    assert [block["tool_use_id"] for block in translated[2]["content"]] == ["one", "two"]
+    assert translated[3] == {"role": "user", "content": "continue"}

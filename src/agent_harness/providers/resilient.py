@@ -32,8 +32,13 @@ class RetryPolicy:
 
 
 def is_retryable(exc: BaseException) -> bool:
-    if isinstance(exc, (KeyboardInterrupt, SystemExit, ProviderError)):
+    if isinstance(exc, (KeyboardInterrupt, SystemExit)):
         return False
+    if isinstance(exc, ProviderError):
+        # OpenAI-compatible adapters retain the original SDK error as the cause.
+        # Retry only when that underlying error is transient.
+        cause = exc.__cause__
+        return cause is not None and cause is not exc and is_retryable(cause)
     if isinstance(exc, (TimeoutError, ConnectionError)):
         return True
     status = getattr(exc, "status_code", None)

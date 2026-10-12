@@ -620,9 +620,10 @@ class Agent:
                 )
                 record = self.approver.review(request)
                 approvals.append(record)
-                span.add_event("hitl.decision", record.trace_event_attributes())
+                decision_attrs = record.trace_event_attributes()
 
                 if record.decision is Decision.DENY:
+                    span.add_event("hitl.decision", decision_attrs)
                     span.set_attribute("tool.denied", True)
                     result = (
                         f"denied by human ({record.rationale}). "
@@ -630,13 +631,18 @@ class Agent:
                     )
                     self._record_tool_result(span, result)
                     return result
-                if record.decision is Decision.EDIT and record.edited_arguments is not None:
+                if record.decision is Decision.EDIT:
                     edited_error = validate_tool_arguments(tool, record.edited_arguments)
                     if edited_error:
+                        decision_attrs["hitl.edit_applied"] = False
+                        span.add_event("hitl.decision", decision_attrs)
                         span.set_attribute("tool.error", "bad_edited_arguments")
                         self._record_tool_result(span, edited_error)
                         return edited_error
                     call = type(call)(id=call.id, name=call.name, arguments=record.edited_arguments)
+                    decision_attrs["hitl.edit_applied"] = True
+
+                span.add_event("hitl.decision", decision_attrs)
 
             if self.capture_tool_io:
                 self._capture_arguments(span, "tool.arguments", call.arguments)

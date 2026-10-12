@@ -169,14 +169,14 @@ Providers: `scripted` (deterministic, offline), `anthropic`, and OpenAI-compatib
 ## MCP: mount a server as tools
 
 ```bash
-harness run "Why was run 3f2a slow?" --mcp "uvx agenthawk --trace-dir ./traces" --approve cli
+harness run "Why was run 3f2a slow?" --mcp "uvx mcp-trace-inspector --trace-dir ./traces" --approve cli
 ```
 
-Remote tools are namespaced (`agenthawk__slowest_spans`) and default to `Risk.EXECUTE` — i.e. **gated until you say otherwise**:
+Remote tools are namespaced (`mcp-trace-inspector__slowest_spans`) and default to `Risk.EXECUTE` — i.e. **gated until you say otherwise**:
 
 ```python
 client, tools = mount_server(
-    ["uvx", "agenthawk"],
+    ["uvx", "mcp-trace-inspector"],
     risk_overrides={"list_runs": Risk.READ},
 )
 ```

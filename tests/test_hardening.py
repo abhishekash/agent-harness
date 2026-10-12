@@ -5,6 +5,8 @@ from agent_harness.checkpoint import CheckpointError, CheckpointStore
 from agent_harness.context import ContextManager, ContextPolicy
 from agent_harness.hitl import AutoApprover
 from agent_harness.providers import ResilientProvider, RetryPolicy, call_tool, say, scripted_run
+from agent_harness.providers.base import ProviderError
+from agent_harness.providers.openai import OpenAIProvider
 from agent_harness.tools import default_tools
 from agent_harness.tracing import init_tracing, load_spans
 from agent_harness.types import AssistantMessage, CancellationToken, Message, RunLimits, ToolCall, Usage
@@ -35,6 +37,46 @@ def test_resilient_provider_retries_only_transient_failures():
     assert wrapped.complete([], []).content == "ok"
     assert provider.calls == 3
     assert sleeps == [0, 0]
+
+
+def test_openai_adapter_retries_wrapped_transport_failure():
+    from types import SimpleNamespace
+
+    class Completions:
+        calls = 0
+
+        def create(self, **request):
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("temporary timeout")
+            return {"choices": [{"message": {"content": "recovered"}}]}
+
+    completions = Completions()
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    provider = ResilientProvider(
+        OpenAIProvider(client=client),
+        RetryPolicy(max_attempts=2, base_delay_s=0, jitter=0),
+        sleep=lambda _: None,
+    )
+    assert provider.complete([Message.user("hello")], []).content == "recovered"
+    assert completions.calls == 2
+
+    class BadRequest:
+        calls = 0
+
+        def create(self, **request):
+            self.calls += 1
+            raise ValueError("invalid model")
+
+    bad_requests = BadRequest()
+    bad = ResilientProvider(
+        OpenAIProvider(client=SimpleNamespace(chat=SimpleNamespace(completions=bad_requests))),
+        RetryPolicy(max_attempts=2, base_delay_s=0, jitter=0),
+        sleep=lambda _: None,
+    )
+    with pytest.raises(ProviderError, match="invalid model"):
+        bad.complete([Message.user("hello")], [])
+    assert bad_requests.calls == 1
 
 
 def test_context_manager_compacts_at_a_safe_assistant_boundary():

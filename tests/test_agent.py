@@ -104,6 +104,47 @@ def test_tool_io_capture_tracks_edited_arguments(workspace, tmp_path):
     assert (workspace / "actual.txt").read_text() == "approved"
 
 
+def test_edited_approval_trace_records_destination_without_contents(workspace, tmp_path):
+    from agent_harness.hitl import ApprovalRecord
+
+    def edit(request):
+        return ApprovalRecord(request, Decision.EDIT, approver="test", edited_arguments={
+            "path": "actual.txt", "content": "approved secret",
+        })
+
+    agent, tp, path = make_agent(
+        [call_tool("write_file", {"path": "proposed.txt", "content": "original secret"}), say("done")],
+        workspace, tmp_path, approver=CallbackApprover(edit),
+    )
+    agent.run("write")
+    tp.force_flush()
+    event = next(e for s in load_spans(path) for e in s["events"] if e["name"] == "hitl.decision")
+    attrs = event["attributes"]
+    assert attrs["hitl.changed_keys"] == ["content", "path"]
+    assert attrs["hitl.proposed_path"] == "proposed.txt"
+    assert attrs["hitl.approved_path"] == "actual.txt"
+    assert attrs["hitl.edit_applied"] is True
+    assert attrs["hitl.proposed_arguments_sha256"] != attrs["hitl.approved_arguments_sha256"]
+    assert "secret" not in path.read_text()
+
+
+def test_edit_decision_without_arguments_does_not_run_original_write(workspace, tmp_path):
+    from agent_harness.hitl import ApprovalRecord
+
+    agent, tp, path = make_agent(
+        [call_tool("write_file", {"path": "proposed.txt", "content": "should not write"}), say("done")],
+        workspace,
+        tmp_path,
+        approver=CallbackApprover(lambda request: ApprovalRecord(request, Decision.EDIT, "test")),
+    )
+    agent.run("write")
+    tp.force_flush()
+
+    assert not (workspace / "proposed.txt").exists()
+    event = next(e for s in load_spans(path) for e in s["events"] if e["name"] == "hitl.decision")
+    assert event["attributes"]["hitl.edit_applied"] is False
+
+
 def test_python_api_defaults_to_deny_all(workspace, tmp_path):
     provider = scripted_run(
         call_tool("write_file", {"path": "unexpected.txt", "content": "x"}),

@@ -6,6 +6,8 @@ a human approved, denied, or edited a call.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -44,8 +46,25 @@ class ApprovalRecord:
             "hitl.approver": self.approver,
             "hitl.rationale": self.rationale,
         }
-        if self.edited_arguments is not None:
+        if self.decision is Decision.EDIT:
             attrs["hitl.edited"] = True
+            if not isinstance(self.edited_arguments, dict):
+                return attrs
+            proposed = self.request.arguments
+            edited = self.edited_arguments
+            attrs["hitl.changed_keys"] = sorted(
+                key for key in proposed.keys() | edited.keys() if proposed.get(key) != edited.get(key)
+            )
+            for label, arguments in (("proposed", proposed), ("approved", edited)):
+                encoded = json.dumps(arguments, sort_keys=True, separators=(",", ":"), default=str)
+                attrs[f"hitl.{label}_arguments_sha256"] = hashlib.sha256(
+                    encoded.encode()
+                ).hexdigest()
+            if self.request.tool_name == "write_file":
+                # Paths make an edited destination reviewable; file contents stay out of traces.
+                for label, arguments in (("proposed", proposed), ("approved", edited)):
+                    if isinstance(arguments.get("path"), str):
+                        attrs[f"hitl.{label}_path"] = arguments["path"]
         return attrs
 
 

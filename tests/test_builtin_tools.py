@@ -52,6 +52,29 @@ def test_shell_blocks_paths_outside_workspace_and_find_exec(workspace):
     assert "recursive find execution" in dangerous
 
 
+def test_shell_rejects_symlink_escape_and_find_output_action(workspace, tmp_path):
+    outside = tmp_path.parent / f"{tmp_path.name}-outside.txt"
+    outside.write_text("outside secret")
+    (workspace / "linked.txt").symlink_to(outside)
+    shell = RunShell(workspace)
+
+    assert "escapes workspace root" in shell.run(command="cat linked.txt")
+    assert "outside secret" not in shell.run(command="grep secret linked.txt")
+    assert "unsupported find argument" in shell.run(command="find . -fprint output.txt")
+    assert not (workspace / "output.txt").exists()
+    assert "ship the harness" in shell.run(command="grep -rn ship .")
+
+
+def test_shell_uses_system_binary_even_when_path_points_at_workspace(workspace, monkeypatch):
+    fake_cat = workspace / "cat"
+    fake_cat.write_text("#!/bin/sh\necho hijacked > marker.txt\n")
+    fake_cat.chmod(0o755)
+    monkeypatch.setenv("PATH", str(workspace))
+
+    assert "ship the harness" in RunShell(workspace).run(command="cat notes.md")
+    assert not (workspace / "marker.txt").exists()
+
+
 def test_default_tools_cover_risk_tiers(workspace):
     risks = {t.name: t.risk.value for t in default_tools(workspace)}
     assert risks == {

@@ -1,4 +1,4 @@
-"""Builtin tools: filesystem (sandboxed to a workspace root) + shell (allowlisted).
+"""Builtin tools: workspace path checks and allowlisted read-only commands.
 
 Design notes:
 - File tools resolve every path against a workspace root and refuse escapes.
@@ -7,7 +7,9 @@ Design notes:
 """
 from __future__ import annotations
 
+import os
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -115,16 +117,24 @@ class WriteFile(_Rooted):
 
 
 class RunShell(_Rooted):
-    """Run an allowlisted, non-shell command with workspace path checks."""
+    """Run a small read-only command grammar with workspace path checks."""
 
     ALLOWLIST = frozenset(
         {"ls", "cat", "echo", "grep", "find", "head", "tail", "wc", "sort", "uniq", "pwd", "tree", "diff"}
     )
     BLOCKED_FIND_OPERATORS = frozenset({"-exec", "-execdir", "-delete", "-ok", "-okdir"})
+    SIMPLE_FLAGS = {
+        "ls": frozenset("alh1"),
+        "wc": frozenset("lwc"),
+        "uniq": frozenset("cdui"),
+    }
+    GREP_FLAGS = frozenset("rnilcvwsFE")  # -R follows symlinks; -r does not.
+    FIND_VALUE_PREDICATES = frozenset({"-name", "-iname", "-type", "-maxdepth", "-mindepth"})
+    FIND_BARE_PREDICATES = frozenset({"-print"})
 
     name = "run_shell"
     description = (
-        "Run a shell command inside the workspace. Allowlisted binaries only "
+        "Run a read-only command inside the workspace. Allowlisted binaries and options only "
         f"({', '.join(sorted(ALLOWLIST))}); 15s timeout; output truncated."
     )
     risk = Risk.EXECUTE
@@ -133,6 +143,84 @@ class RunShell(_Rooted):
         "properties": {"command": {"type": "string", "description": "Command line, e.g. 'grep -rn TODO src'"}},
         "required": ["command"],
     }
+
+    def _check_paths(self, paths: list[str]) -> str | None:
+        for path in paths:
+            try:
+                self._resolve(path)
+            except PermissionError:
+                return f"error: shell path escapes workspace root: {path!r}"
+        return None
+
+    @staticmethod
+    def _flag_group(token: str, allowed: frozenset[str]) -> bool:
+        return token.startswith("-") and not token.startswith("--") and bool(token[1:]) and all(
+            flag in allowed for flag in token[1:]
+        )
+
+    def _validate_argv(self, argv: list[str]) -> str | None:
+        command, args = argv[0], argv[1:]
+        if command == "echo":
+            return None  # No shell expansion or output redirection is involved.
+        if command == "pwd":
+            return "error: pwd does not accept arguments" if args else None
+
+        if command == "find":
+            if any(token in self.BLOCKED_FIND_OPERATORS for token in args):
+                return "error: recursive find execution/deletion is not allowed"
+            paths: list[str] = []
+            index = 0
+            while index < len(args) and not args[index].startswith("-"):
+                paths.append(args[index])
+                index += 1
+            path_error = self._check_paths(paths or ["."])
+            if path_error:
+                return path_error
+            while index < len(args):
+                predicate = args[index]
+                if predicate in self.FIND_BARE_PREDICATES:
+                    index += 1
+                elif predicate in self.FIND_VALUE_PREDICATES and index + 1 < len(args):
+                    value = args[index + 1]
+                    if predicate in {"-maxdepth", "-mindepth"} and not value.isdecimal():
+                        return f"error: invalid find depth: {value!r}"
+                    if predicate == "-type" and value not in {"f", "d", "l"}:
+                        return f"error: unsupported find type: {value!r}"
+                    index += 2
+                else:
+                    return f"error: unsupported find argument: {predicate!r}"
+            return None
+
+        if command == "grep":
+            index = 0
+            while index < len(args) and self._flag_group(args[index], self.GREP_FLAGS):
+                index += 1
+            if index >= len(args) or args[index].startswith("-"):
+                return "error: grep needs a pattern (only read-only short flags are supported)"
+            paths = args[index + 1 :]
+            if any(path.startswith("-") for path in paths):
+                return "error: unsupported grep argument"
+            return self._check_paths(paths)
+
+        if command in {"head", "tail"}:
+            if len(args) >= 2 and args[0] in {"-n", "-c"}:
+                if not args[1].isdecimal():
+                    return f"error: invalid {command} count: {args[1]!r}"
+                args = args[2:]
+            if any(arg.startswith("-") for arg in args):
+                return f"error: unsupported {command} argument"
+            return self._check_paths(args)
+
+        if command in self.SIMPLE_FLAGS:
+            index = 0
+            while index < len(args) and self._flag_group(args[index], self.SIMPLE_FLAGS[command]):
+                index += 1
+            args = args[index:]
+        if any(arg.startswith("-") for arg in args):
+            return f"error: unsupported {command} argument"
+        if command == "diff" and len(args) != 2:
+            return "error: diff requires two paths"
+        return self._check_paths(args)
 
     def run(self, command: str, **_: Any) -> str:
         try:
@@ -143,15 +231,15 @@ class RunShell(_Rooted):
             return "error: empty command"
         if argv[0] not in self.ALLOWLIST:
             return f"error: {argv[0]!r} is not allowlisted ({sorted(self.ALLOWLIST)})"
-        if any(token in self.BLOCKED_FIND_OPERATORS for token in argv):
-            return "error: recursive find execution/deletion is not allowed"
-        for token in argv[1:]:
-            if token.startswith("/") or token == ".." or token.startswith("../") or "/../" in token:
-                candidate = Path(token) if token.startswith("/") else self.root / token
-                try:
-                    candidate.resolve().relative_to(self.root)
-                except ValueError:
-                    return f"error: shell path escapes workspace root: {token!r}"
+        argument_error = self._validate_argv(argv)
+        if argument_error:
+            return argument_error
+        # Do not resolve binaries through a caller-controlled PATH that might include
+        # the workspace (or a writable directory before the system binaries).
+        executable = shutil.which(argv[0], path=os.defpath)
+        if executable is None:
+            return f"error: allowlisted command is unavailable: {argv[0]}"
+        argv[0] = executable
         try:
             proc = subprocess.run(
                 argv,
