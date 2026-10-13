@@ -2,7 +2,7 @@
 
 Traces answer "what happened inside run X"; the run store answers
 "what have I run lately, and what did it cost". Both are queryable via
-the sibling project `mcp-trace-inspector`.
+the sibling project `SpanHound`.
 """
 from __future__ import annotations
 

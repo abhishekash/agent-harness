@@ -1,7 +1,7 @@
 """Render JSONL traces back into a human timeline.
 
 Pure functions over parsed span dicts — no OTel dependency here, so this
-module is also reusable by mcp-trace-inspector and `agent-evals` via file parsing.
+module is also reusable by SpanHound and `agent-evals` via file parsing.
 """
 from __future__ import annotations
 

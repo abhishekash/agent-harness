@@ -70,7 +70,7 @@ is not detected as interactive.
 
 | Decision | Rationale |
 |---|---|
-| Human decisions are **trace events**, not logs | Audit trail that survives the session; queryable by tools (see [mcp-trace-inspector](https://github.com/abhishekash/mcp-trace-inspector)) |
+| Human decisions are **trace events**, not logs | Audit trail that survives the session; queryable by tools (see [SpanHound](https://github.com/abhishekash/spanhound)) |
 | Approver is a **protocol** (`auto` / `cli` / `callback` / `deny-all`) | Same loop runs unattended evals and interactive sessions; `deny-all` exists to test graceful degradation |
 | **EDIT is a decision type**, not just yes/no | Real HITL means the human can fix the call ("not `../etc`, `safe.txt`") and the agent proceeds with corrected args |
 | JSONL span files as the **shared contract** | Traces are data: the MCP server, the evals repo, and the CLI renderer all read the same format |
@@ -169,14 +169,14 @@ Providers: `scripted` (deterministic, offline), `anthropic`, and OpenAI-compatib
 ## MCP: mount a server as tools
 
 ```bash
-harness run "Why was run 3f2a slow?" --mcp "uvx --from git+https://github.com/abhishekash/mcp-trace-inspector@v0.3.0 mcp-trace-inspector --trace-dir ./traces" --approve cli
+harness run "Why was run 3f2a slow?" --mcp "uvx spanhound --trace-dir ./traces" --approve cli
 ```
 
-The [mcp-trace-inspector](https://github.com/abhishekash/mcp-trace-inspector) `0.3.0` release is currently installed from its Git tag while PyPI publication is pending. Remote tools use the `mcp-trace-inspector` namespace (`mcp-trace-inspector__slowest_spans`) and default to `Risk.EXECUTE` — i.e. **gated until you say otherwise**:
+Install [SpanHound](https://github.com/abhishekash/spanhound) from PyPI with `uvx`. Remote tools use the `spanhound` namespace (`spanhound__slowest_spans`) and default to `Risk.EXECUTE` — i.e. **gated until you say otherwise**:
 
 ```python
 client, tools = mount_server(
-    ["uvx", "--from", "git+https://github.com/abhishekash/mcp-trace-inspector@v0.3.0", "mcp-trace-inspector"],
+    ["uvx", "spanhound"],
     risk_overrides={"list_runs": Risk.READ},
 )
 ```

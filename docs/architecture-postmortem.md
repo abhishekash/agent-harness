@@ -2,6 +2,8 @@
 
 Date: 2026-10-08
 
+Naming note (2026-10-13): `mcp-trace-inspector` is now [SpanHound](https://github.com/abhishekash/spanhound). The historical project name below is retained as written.
+
 This is the design record for `agent-harness`, `mcp-trace-inspector`, `agent-skills`, and `agent-evals`. It documents what was built, what was deliberately not built, and what the first deterministic results actually prove.
 
 ## The problem
