@@ -169,14 +169,14 @@ Providers: `scripted` (deterministic, offline), `anthropic`, and OpenAI-compatib
 ## MCP: mount a server as tools
 
 ```bash
-harness run "Why was run 3f2a slow?" --mcp "uvx mcp-trace-inspector --trace-dir ./traces" --approve cli
+harness run "Why was run 3f2a slow?" --mcp "uvx --from git+https://github.com/abhishekash/mcp-trace-inspector@v0.3.0 mcp-trace-inspector --trace-dir ./traces" --approve cli
 ```
 
-Remote tools are namespaced (`mcp-trace-inspector__slowest_spans`) and default to `Risk.EXECUTE` — i.e. **gated until you say otherwise**:
+The [mcp-trace-inspector](https://github.com/abhishekash/mcp-trace-inspector) `0.3.0` release is currently installed from its Git tag while PyPI publication is pending. Remote tools use the `mcp-trace-inspector` namespace (`mcp-trace-inspector__slowest_spans`) and default to `Risk.EXECUTE` — i.e. **gated until you say otherwise**:
 
 ```python
 client, tools = mount_server(
-    ["uvx", "mcp-trace-inspector"],
+    ["uvx", "--from", "git+https://github.com/abhishekash/mcp-trace-inspector@v0.3.0", "mcp-trace-inspector"],
     risk_overrides={"list_runs": Risk.READ},
 )
 ```
